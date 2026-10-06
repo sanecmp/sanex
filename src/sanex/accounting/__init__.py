@@ -1,0 +1,1 @@
+"""Sanex accounting package."""

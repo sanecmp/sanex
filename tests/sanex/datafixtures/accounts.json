@@ -1,0 +1,40 @@
+{
+  "accounts_service": [
+    {
+      "path": "/org/freedesktop/Accounts/User1001",
+      "uid": 1001,
+      "login": "child",
+      "name": "Иван",
+      "system": false,
+      "local": true,
+      "locked": false
+    },
+    {
+      "path": "/org/freedesktop/Accounts/User2000",
+      "uid": 2000,
+      "login": "network-child",
+      "name": "",
+      "system": false,
+      "local": false,
+      "locked": true
+    },
+    {
+      "path": "/org/freedesktop/Accounts/User999",
+      "uid": 999,
+      "login": "service",
+      "name": "Service",
+      "system": true,
+      "local": true,
+      "locked": false
+    }
+  ],
+  "nss": [
+    ["child", "x", 1001, 1001, "Иван,Room 1", "/home/child", "/bin/bash"],
+    ["parent", "x", 1000, 1000, "", "/home/parent", "/bin/dash"],
+    ["below-minimum", "x", 999, 999, "Low UID", "/home/low", "/bin/bash"],
+    ["root", "x", 1500, 1500, "Wrong root", "/root", "/bin/bash"],
+    ["disabled", "x", 1002, 1002, "Disabled", "/home/disabled", "/usr/sbin/nologin"],
+    ["false-shell", "x", 1003, 1003, "False", "/home/false", "/bin/false"],
+    ["unknown-shell", "x", 1004, 1004, "Unknown", "/home/unknown", "/bin/zsh"]
+  ]
+}

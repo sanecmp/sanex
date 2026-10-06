@@ -1,0 +1,5 @@
+{"seq":120,"type":"session_start","timestamp":1790842334,"run_ident":120,"sess_ident":"3","meta":{"existing":false}}
+{"seq":135,"type":"session_end","timestamp":1790845351,"run_ident":120,"duration":3017,"meta":{"actor":"user"}}
+{"seq":121,"type":"prc_start","timestamp":1790842381,"run_ident":121,"prc_name":"yandex_browser","exe":"/opt/yandex/browser/yandex_browser","meta":{"observed_via":"atspi"}}
+{"seq":140,"type":"prc_end","timestamp":1790845518,"run_ident":121,"duration":3137,"meta":{"actor":"user"}}
+{"seq":141,"type":"enforcement_failed","timestamp":1790845519,"rule_ident":701,"wnd_ident":42,"reason":"close_unsupported","meta":{}}

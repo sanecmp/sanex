@@ -1,0 +1,34 @@
+{
+  "request": {
+    "hostname": "child-laptop",
+    "version": "0.1.0",
+    "config_ident": 1842,
+    "accounts": [
+      {
+        "uid": 1001,
+        "login": "child",
+        "name": "Иван"
+      }
+    ],
+    "command_results": [
+      {
+        "ident": 91,
+        "status": "done",
+        "error": null
+      }
+    ]
+  },
+  "response": {
+    "config": null,
+    "commands": [
+      {
+        "ident": 92,
+        "type": "update",
+        "payload": {
+          "version": "0.2.0.dev3+g4f81a2c",
+          "index_url": "https://packages.example.test/simple"
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,47 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sanex"
+version = "0.1.0"
+description = "System service for child computer digital wellbeing"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+dependencies = [
+    "cryptography>=46,<47",
+    "dbus-fast>=5,<6",
+    "httpx>=0.28,<1",
+    "pydantic>=2.13,<3",
+    "regex>=2024.11.6,<2027",
+    "sanelib>=0.1,<0.2",
+]
+
+[tool.uv.sources]
+sanelib = { path = "../sanelib", editable = true }
+
+[project.scripts]
+sanex = "sanex.cli:main"
+sanex-indicator = "sanex.indicator.app:main"
+sanex-window-agent = "sanex.window_agent:main"
+
+[dependency-groups]
+tests = [
+    "pytest>=8,<10",
+    "pytest-asyncio>=1,<2",
+    "pytest-datafixtures>=1.1,<2",
+    "time-machine>=3,<4",
+]
+
+[tool.pytest.ini_options]
+addopts = "--import-mode=importlib"
+
+[tool.makeapp.tests]
+workflow_github = ".github/workflows/sanex.yml"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sanex"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/src/sanex", "/pyproject.toml", "/LICENSE"]

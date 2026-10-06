@@ -1,0 +1,55 @@
+{
+  "ident": 1842,
+  "timezone": "Asia/Novosibirsk",
+  "sync_interval": 300,
+  "discovery_interval": 30,
+  "walk_interval": 1,
+  "save_interval": 5,
+  "min_prc_duration": 5,
+  "ignored_prcs": [
+    "nautilus"
+  ],
+  "accounts": [
+    {
+      "uid": 1001,
+      "collect": true,
+      "apply": true,
+      "limits": {
+        "ranges": [
+          {
+            "ident": 501,
+            "apply": true,
+            "weekday": 4,
+            "since": 1320,
+            "till": 1440,
+            "session_rule_ident": 601
+          }
+        ],
+        "session_rules": [
+          {
+            "ident": 601,
+            "apply": true,
+            "max_sessions": 3,
+            "max_duration": 7200,
+            "break_duration": 7200,
+            "app_rules": [
+              {
+                "ident": 701,
+                "name": "Yandex Browser",
+                "apply": true,
+                "max_launches": 5,
+                "max_time": 3600,
+                "prc_name": "yandex_browser",
+                "prc_name_match": "exact",
+                "exe": "/opt/yandex/browser/yandex_browser",
+                "exe_match": "exact",
+                "wnd_title": null,
+                "wnd_title_match": null
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

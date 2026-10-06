@@ -1,0 +1,62 @@
+[
+  {
+    "ident": "2",
+    "uid": 1001,
+    "login": "child",
+    "seat": "seat0",
+    "path": "/org/freedesktop/login1/session/_32",
+    "user_path": "/org/freedesktop/login1/user/_1001",
+    "timestamp_us": 1790910138123456,
+    "type": "wayland",
+    "class": "user",
+    "state": "active",
+    "active": true,
+    "idle": false,
+    "locked": false
+  },
+  {
+    "ident": "3",
+    "uid": 1002,
+    "login": "second-child",
+    "seat": "seat0",
+    "path": "/org/freedesktop/login1/session/_33",
+    "user_path": "/org/freedesktop/login1/user/_1002",
+    "timestamp_us": 1790910200000000,
+    "type": "x11",
+    "class": "user",
+    "state": "online",
+    "active": false,
+    "idle": true,
+    "locked": true
+  },
+  {
+    "ident": "4",
+    "uid": 1001,
+    "login": "child",
+    "seat": "",
+    "path": "/org/freedesktop/login1/session/_34",
+    "user_path": "/org/freedesktop/login1/user/_1001",
+    "timestamp_us": 1790910300000000,
+    "type": "tty",
+    "class": "user",
+    "state": "online",
+    "active": false,
+    "idle": false,
+    "locked": false
+  },
+  {
+    "ident": "5",
+    "uid": 120,
+    "login": "gdm",
+    "seat": "seat0",
+    "path": "/org/freedesktop/login1/session/_35",
+    "user_path": "/org/freedesktop/login1/user/_120",
+    "timestamp_us": 1790910400000000,
+    "type": "wayland",
+    "class": "greeter",
+    "state": "active",
+    "active": true,
+    "idle": false,
+    "locked": false
+  }
+]

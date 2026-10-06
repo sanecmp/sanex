@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Sanex indicator
+Name[ru]=Индикатор sanex
+Comment=Show remaining computer time and sanex service status
+Comment[ru]=Показывает оставшееся время работы и состояние службы sanex
+TryExec=/opt/sanex/bin/sanex-indicator
+Exec=/opt/sanex/bin/sanex-indicator
+Icon=sanex-symbolic
+Terminal=false
+OnlyShowIn=GNOME;
+NoDisplay=true
+X-GNOME-Autostart-enabled=true

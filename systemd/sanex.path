@@ -1,0 +1,9 @@
+[Unit]
+Description=Start sanex after registration
+
+[Path]
+PathExists=/opt/sanex/config/config.json
+Unit=sanex.service
+
+[Install]
+WantedBy=multi-user.target

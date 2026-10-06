@@ -1,0 +1,71 @@
+{
+  "config_ident": 1842,
+  "boot_ident": "4120b850-79a0-4b7c-b25c-42d6801a7b71",
+  "wnd_seq": 42,
+  "event_seq": 141,
+  "break_till": null,
+  "sess_runs": [
+    {
+      "run_ident": 120,
+      "sess_ident": "3",
+      "started": 1790842334,
+      "duration": 3017,
+      "terminate_requested": null,
+      "break_duration": 0
+    }
+  ],
+  "prc_runs": [
+    {
+      "run_ident": 121,
+      "group_ident": "6443:5753094",
+      "prc_name": "yandex_browser",
+      "exe": "/opt/yandex/browser/yandex_browser",
+      "started": 1790842381,
+      "duration": 3137,
+      "reported": true,
+      "wnds": [
+        42
+      ]
+    }
+  ],
+  "wnds": [
+    {
+      "ident": 42,
+      "sess_ident": "3",
+      "bus": ":1.188",
+      "path": "/org/a11y/atspi/accessible/124",
+      "pid": 6443,
+      "prc_started": 5753094
+    }
+  ],
+  "occurrences": [
+    {
+      "range_ident": 501,
+      "date": "2026-10-01",
+      "sessions": [
+        {
+          "ident": "3",
+          "started": 1790842334,
+          "spent": 812,
+          "active": true,
+          "max_duration": 7200,
+          "break_duration": 7200,
+          "terminate_requested": null
+        }
+      ],
+      "apps": [
+        {
+          "ident": 701,
+          "spent": 918,
+          "wnds": [
+            41,
+            42
+          ],
+          "active_wnds": [
+            42
+          ]
+        }
+      ]
+    }
+  ]
+}

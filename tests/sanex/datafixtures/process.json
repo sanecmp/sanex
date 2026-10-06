@@ -1,0 +1,11 @@
+{
+  "pid": 5511,
+  "parent_pid": 1,
+  "uid": 1001,
+  "started": 5753094,
+  "prc_name": "yandex_browser",
+  "exe": "/opt/yandex/browser/yandex_browser",
+  "cgroup": "/user.slice/user-1001.slice/user@1001.service/app.slice/app-browser.scope",
+  "stat": "5511 (yandex_browser) S 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 5753094 20 21",
+  "status": "Name:\tyandex_browser\nUid:\t1001\t1001\t1001\t1001\n"
+}

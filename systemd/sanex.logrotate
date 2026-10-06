@@ -1,0 +1,9 @@
+/var/log/sanex/sanex.log {
+    size 1M
+    rotate 4
+    missingok
+    notifempty
+    compress
+    copytruncate
+    create 0600 root root
+}

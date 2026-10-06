@@ -1,0 +1,31 @@
+{
+  "address": "unix:path=/run/user/1001/at-spi/bus_1",
+  "application": {
+    "bus": ":1.20",
+    "path": "/org/a11y/atspi/accessible/root",
+    "pid": 5511
+  },
+  "children": [
+    {
+      "bus": ":1.20",
+      "path": "/org/a11y/atspi/accessible/1",
+      "pid": 5511,
+      "title": "School portal",
+      "role": 23
+    },
+    {
+      "bus": ":1.20",
+      "path": "/org/a11y/atspi/accessible/2",
+      "pid": 5511,
+      "title": "Confirm exit",
+      "role": 16
+    },
+    {
+      "bus": ":1.20",
+      "path": "/org/a11y/atspi/accessible/3",
+      "pid": 5511,
+      "title": "Page contents",
+      "role": 43
+    }
+  ]
+}

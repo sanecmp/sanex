@@ -1,0 +1,38 @@
+[Unit]
+Description=Sanex digital wellbeing service
+After=dbus.service systemd-logind.service network.target
+ConditionPathExists=/opt/sanex/config/config.json
+
+[Service]
+Type=simple
+User=root
+Group=root
+UMask=0077
+RuntimeDirectory=sanex
+RuntimeDirectoryMode=0755
+WorkingDirectory=/opt/sanex
+ExecStart=/opt/sanex/bin/sanex service
+Restart=always
+RestartSec=10s
+TimeoutStopSec=20s
+StandardOutput=append:/var/log/sanex/sanex.log
+StandardError=append:/var/log/sanex/sanex.log
+
+NoNewPrivileges=yes
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectControlGroups=yes
+ProtectHome=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectSystem=strict
+ReadWritePaths=/opt/sanex /var/log/sanex
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target
