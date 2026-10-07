@@ -49,13 +49,12 @@ A real installation changes `/opt`, `/var/log`, `/etc/systemd/system`, `/etc/xdg
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/sanecmp/sanex/main/install.sh \
-    -o install-sanex.sh &&
-sudo sh install-sanex.sh 'sanecmp-sanex==0.1.0'
+    | sudo sh -s -- 'sanecmp-sanex==0.1.0'
 sudo /opt/sanex/bin/sanex register YOUR-CODE
 ```
 
 PyPI is the default source. To install from GitHub instead, pass `--from-github`
-to the same installer; this mode requires system Git and installs both sanex
+after `sudo sh -s --`; this mode requires system Git and installs both sanex
 and sanelib from the `main` branches of their official repositories.
 Do not supply `PACKAGE` together with `--from-github`. Third-party dependencies
 still come from PyPI, or the HTTPS index selected with `--index-url`.
@@ -81,9 +80,8 @@ unprefixed PyPI project.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/sanecmp/sanex/main/install.sh \
-    -o install-sanex.sh &&
-sudo sh install-sanex.sh
+    | sudo sh
 ```
 
-Automatic: sanea → **Computers** → **Update sanex**; target version and
-`https://pypi.org/simple`.
+You can also update sanex through sanea's web interface. In **Computers**, enter
+the version you want in **Update sanex** and start the update.
