@@ -24,7 +24,6 @@ Its technical log is written to `sanex.log` inside the selected state directory.
 ## Tests and build
 
 ```bash
-ma tools
 ma tests
 uv build
 ```
@@ -76,3 +75,14 @@ Configuration and counters stay in separate protected directories under
 `/opt/sanex`, outside that environment. Self-updates install the exact
 `sanecmp-sanex` version requested by sanea; they never install the unrelated
 unprefixed PyPI project.
+
+## Updating sanex
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sanecmp/sanex/main/install.sh \
+    -o install-sanex.sh &&
+sudo sh install-sanex.sh
+```
+
+Automatic: sanea → **Computers** → **Update sanex**; target version and
+`https://pypi.org/simple`.
