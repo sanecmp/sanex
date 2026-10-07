@@ -64,7 +64,8 @@ Replace `YOUR-CODE` with the current code shown in sanea's **Computers** section
 Registration stays open for 30 seconds. Use the absolute sanex path; installation
 does not add that command to sudo's PATH. Sanea and sanex must be on a reachable
 home network, with HTTPS TCP 8443 and discovery UDP 62117 allowed on the server.
-For a separate sanea computer, add its LAN IP to `SANEA_ALLOWED_HOSTS`; see the
+When sanea runs on another computer, its installer adds local IP addresses to
+`SANEA_ALLOWED_HOSTS`; see the
 [sanea network setup](https://github.com/sanecmp/sanea#home-network-access).
 
 After registration, `sanex.path` starts `sanex.service` automatically. The status indicator starts automatically when a user next signs in to GNOME; installation does not modify already running sessions. Use a local wheel path instead of the indexed requirement to install an unpublished build.
