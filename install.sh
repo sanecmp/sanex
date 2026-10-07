@@ -9,7 +9,7 @@ usage() {
 Usage: install.sh [--uv PATH] [--python PATH] [--index-url URL]
                   [--destdir DIRECTORY] [PACKAGE]
 
-Install sanex as a root systemd service. PACKAGE defaults to "sanex" and may be
+Install sanex as a root systemd service. PACKAGE defaults to "sanecmp-sanex" and may be
 an exact requirement or a local wheel path. --destdir stages an installation
 without invoking systemd and is intended for packaging and automated checks.
 USAGE
@@ -56,7 +56,7 @@ resolve_executable() {
 uv_command=uv
 python_command=/usr/bin/python3
 index_url=https://pypi.org/simple
-package=sanex
+package=sanecmp-sanex
 package_set=0
 destdir=
 

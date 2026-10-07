@@ -189,7 +189,7 @@ async def test_prepares_exact_uv_replacement_and_durable_attempt(
         "https://packages.example.test/simple",
         "--python",
         install_payload["python"],
-        "sanex==0.2.0.dev3+g4f81a2c",
+        "sanecmp-sanex==0.2.0.dev3+g4f81a2c",
     )
     assert environment["UV_TOOL_DIR"] == "/opt/sanex/bundle"
     assert environment["UV_TOOL_BIN_DIR"] == "/opt/sanex/bin"

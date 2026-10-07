@@ -35,11 +35,21 @@ def test_installer_has_valid_shell_syntax_and_help() -> None:
     assert "--python PATH" in result.stdout
     assert "--index-url URL" in result.stdout
     assert "--destdir DIRECTORY" in result.stdout
+    assert "PACKAGE defaults to \"sanecmp-sanex\"" in result.stdout
     assert "python_command=/usr/bin/python3" in INSTALLER.read_text()
     assert "raw.githubusercontent.com/sanecmp/sanex/main" in INSTALLER.read_text()
 
 
-def test_installer_stages_complete_tree_and_is_repeatable(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("package_arguments", "expected_package"),
+    [
+        pytest.param([], "sanecmp-sanex", id="default-package"),
+        pytest.param(["sanecmp-sanex==0.1.0"], "sanecmp-sanex==0.1.0", id="exact-version"),
+    ],
+)
+def test_installer_stages_complete_tree_and_is_repeatable(
+    tmp_path: Path, package_arguments: list[str], expected_package: str,
+) -> None:
     fake_uv = tmp_path / "uv"
     uv_log = tmp_path / "uv.log"
     fake_uv.write_text(
@@ -64,7 +74,7 @@ done
         f"{fake_uv}",
         "--python",
         f"{sys.executable}",
-        "sanex==0.1.0",
+        *package_arguments,
     ]
 
     for attempt in range(2):
@@ -124,7 +134,7 @@ done
     assert len(invocations) == 2
     assert all("tool install" in invocation for invocation in invocations)
     assert all("--force" in invocation for invocation in invocations)
-    assert all("sanex==0.1.0" in invocation for invocation in invocations)
+    assert all(invocation.split()[-1] == expected_package for invocation in invocations)
 
 
 def test_wheel_contains_runtime_only(tmp_path: Path) -> None:
@@ -138,7 +148,7 @@ def test_wheel_contains_runtime_only(tmp_path: Path) -> None:
         capture_output=True,
         text=True,
     )
-    wheel = next(output.glob("sanex-*.whl"))
+    wheel = next(output.glob("sanecmp_sanex-*.whl"))
 
     with zipfile.ZipFile(wheel) as archive:
         names = set(archive.namelist())

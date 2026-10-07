@@ -6,7 +6,7 @@ from importlib.metadata import PackageNotFoundError, version
 def installed_version() -> str:
     """Return the installed sanex distribution version."""
     try:
-        return version("sanex")
+        return version("sanecmp-sanex")
 
     except PackageNotFoundError:
         return "0+unknown"

@@ -3,7 +3,7 @@ requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
-name = "sanex"
+name = "sanecmp-sanex"
 version = "0.1.0"
 description = "System service for child computer digital wellbeing"
 license = "BSD-3-Clause"
@@ -15,11 +15,15 @@ dependencies = [
     "httpx>=0.28,<1",
     "pydantic>=2.13,<3",
     "regex>=2024.11.6,<2027",
-    "sanelib>=0.1,<0.2",
+    "sanecmp-sanelib>=0.1,<0.2",
 ]
 
+[project.urls]
+Repository = "https://github.com/sanecmp/sanex"
+Issues = "https://github.com/sanecmp/sanex/issues"
+
 [tool.uv.sources]
-sanelib = { path = "../sanelib", editable = true }
+sanecmp-sanelib = { path = "../sanelib", editable = true }
 
 [project.scripts]
 sanex = "sanex.cli:main"

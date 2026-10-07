@@ -398,7 +398,7 @@ class UpdateHandler:
             payload.index_url,
             "--python",
             python,
-            f"sanex=={payload.version}",
+            f"sanecmp-sanex=={payload.version}",
         )
 
     def _environment(self) -> dict[str, str]:

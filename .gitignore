@@ -22,3 +22,4 @@ htmlcov/
 *.p12
 *.pfx
 .state/
+vibe/

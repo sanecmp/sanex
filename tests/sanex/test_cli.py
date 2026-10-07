@@ -37,7 +37,7 @@ def test_version_option_prints_distribution_version(
 
     assert raised.value.code == 0
     captured = capsys.readouterr()
-    assert captured.out == f"sanex {version("sanex")}\n"
+    assert captured.out == f"sanex {version("sanecmp-sanex")}\n"
     assert captured.err == ""
 
 

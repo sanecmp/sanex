@@ -2,6 +2,10 @@
 
 sanex monitors configured local accounts and applies limits received from sanea. The production service targets Debian-based Linux with GNOME, systemd/logind, and AccountsService.
 
+Its Python distribution is `sanecmp-sanex`; the import package and installed
+commands remain `sanex`, `sanex-indicator` and `sanex-window-agent`. It depends on
+`sanecmp-sanelib`. Installation and self-updates use the distribution name.
+
 ## Development mode
 
 Install Python 3.12+, uv and makeapp (`makeapp>=2.3,<3`). Run package commands from this directory.
@@ -37,12 +41,32 @@ A safe staged installation can be inspected without invoking systemd:
 
 ## System installation
 
+A system Python 3.12+, curl and a root-owned system uv are required. Python and
+uv, including their containing directories, must not be writable by the child.
+The default Python is `/usr/bin/python3`; `--python` and `--uv` accept other
+protected paths. The installer does not download a managed Python.
+
 A real installation changes `/opt`, `/var/log`, `/etc/systemd/system`, `/etc/xdg/autostart`, and `/etc/logrotate.d`, so it must run as root:
 
 ```bash
-sudo ./install.sh sanex
+curl -fsSL https://raw.githubusercontent.com/sanecmp/sanex/main/install.sh \
+    -o install-sanex.sh &&
+sudo sh install-sanex.sh 'sanecmp-sanex==0.1.0'
 sudo /opt/sanex/bin/sanex register YOUR-CODE
 ```
 
-After registration, `sanex.path` starts `sanex.service` automatically. The status indicator starts automatically when a user next signs in to GNOME; installation does not modify already running sessions. Use a local wheel path instead of `sanex` to install an unpublished build.
+Replace `YOUR-CODE` with the current code shown in sanea's **Computers** section.
+Registration stays open for 30 seconds. Use the absolute sanex path; installation
+does not add that command to sudo's PATH. Sanea and sanex must be on a reachable
+home network, with HTTPS TCP 8443 and discovery UDP 62117 allowed on the server.
+For a separate sanea computer, add its LAN IP to `SANEA_ALLOWED_HOSTS`; see the
+[sanea network setup](https://github.com/sanecmp/sanea#home-network-access).
+
+After registration, `sanex.path` starts `sanex.service` automatically. The status indicator starts automatically when a user next signs in to GNOME; installation does not modify already running sessions. Use a local wheel path instead of the indexed requirement to install an unpublished build.
 The private technical log is written to `/var/log/sanex/sanex.log` and rotated automatically.
+
+uv's managed application environment is `/opt/sanex/bundle/sanecmp-sanex`.
+Configuration and counters stay in separate protected directories under
+`/opt/sanex`, outside that environment. Self-updates install the exact
+`sanecmp-sanex` version requested by sanea; they never install the unrelated
+unprefixed PyPI project.
