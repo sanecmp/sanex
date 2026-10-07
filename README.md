@@ -55,6 +55,12 @@ sudo sh install-sanex.sh 'sanecmp-sanex==0.1.0'
 sudo /opt/sanex/bin/sanex register YOUR-CODE
 ```
 
+PyPI is the default source. To install from GitHub instead, pass `--from-github`
+to the same installer; this mode requires system Git and installs both sanex
+and sanelib from the `main` branches of their official repositories.
+Do not supply `PACKAGE` together with `--from-github`. Third-party dependencies
+still come from PyPI, or the HTTPS index selected with `--index-url`.
+
 Replace `YOUR-CODE` with the current code shown in sanea's **Computers** section.
 Registration stays open for 30 seconds. Use the absolute sanex path; installation
 does not add that command to sudo's PATH. Sanea and sanex must be on a reachable

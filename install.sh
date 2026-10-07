@@ -8,10 +8,13 @@ usage() {
     cat <<'USAGE'
 Usage: install.sh [--uv PATH] [--python PATH] [--index-url URL]
                   [--destdir DIRECTORY] [PACKAGE]
+                  [--from-github]
 
 Install sanex as a root systemd service. PACKAGE defaults to "sanecmp-sanex" and may be
 an exact requirement or a local wheel path. --destdir stages an installation
 without invoking systemd and is intended for packaging and automated checks.
+--from-github installs sanex and sanelib from the main branches of their GitHub
+repositories and requires git. PACKAGE cannot be combined with this mode.
 USAGE
 }
 
@@ -59,6 +62,7 @@ index_url=https://pypi.org/simple
 package=sanecmp-sanex
 package_set=0
 destdir=
+from_github=0
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -76,6 +80,10 @@ while [ "$#" -gt 0 ]; do
             [ "$#" -ge 2 ] || fail "--index-url requires a URL"
             index_url=$2
             shift 2
+            ;;
+        --from-github)
+            from_github=1
+            shift
             ;;
         --destdir)
             [ "$#" -ge 2 ] || fail "--destdir requires a directory"
@@ -97,6 +105,15 @@ while [ "$#" -gt 0 ]; do
             ;;
     esac
 done
+
+if [ "$from_github" -eq 1 ]; then
+    [ "$package_set" -eq 0 ] || fail "PACKAGE cannot be combined with --from-github"
+    command -v git >/dev/null 2>&1 || fail "git is required for --from-github"
+    package="sanecmp-sanex @ git+https://github.com/sanecmp/sanex.git@main"
+    set -- --with "sanecmp-sanelib @ git+https://github.com/sanecmp/sanelib.git@main"
+else
+    set --
+fi
 
 staging=0
 if [ -n "$destdir" ]; then
@@ -240,6 +257,7 @@ UV_TOOL_BIN_DIR=$bin_dir \
     --index-strategy first-index \
     --default-index "$index_url" \
     --python "$python_path" \
+    "$@" \
     "$package"
 
 [ -x "$bin_dir/sanex" ] || fail "uv did not install the sanex entry point"

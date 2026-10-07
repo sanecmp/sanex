@@ -35,27 +35,35 @@ def test_installer_has_valid_shell_syntax_and_help() -> None:
     assert "--python PATH" in result.stdout
     assert "--index-url URL" in result.stdout
     assert "--destdir DIRECTORY" in result.stdout
+    assert "--from-github" in result.stdout
     assert "PACKAGE defaults to \"sanecmp-sanex\"" in result.stdout
     assert "python_command=/usr/bin/python3" in INSTALLER.read_text()
     assert "raw.githubusercontent.com/sanecmp/sanex/main" in INSTALLER.read_text()
 
 
 @pytest.mark.parametrize(
-    ("package_arguments", "expected_package"),
+    ("package_arguments", "expected_package", "expected_library"),
     [
-        pytest.param([], "sanecmp-sanex", id="default-package"),
-        pytest.param(["sanecmp-sanex==0.1.0"], "sanecmp-sanex==0.1.0", id="exact-version"),
+        pytest.param([], "sanecmp-sanex", None, id="default-package"),
+        pytest.param(["sanecmp-sanex==0.1.0"], "sanecmp-sanex==0.1.0", None, id="exact-version"),
+        pytest.param(
+            ["--from-github"],
+            "sanecmp-sanex @ git+https://github.com/sanecmp/sanex.git@main",
+            "sanecmp-sanelib @ git+https://github.com/sanecmp/sanelib.git@main",
+            id="github-main",
+        ),
     ],
 )
 def test_installer_stages_complete_tree_and_is_repeatable(
-    tmp_path: Path, package_arguments: list[str], expected_package: str,
+    tmp_path: Path, package_arguments: list[str], expected_package: str, expected_library: str | None,
 ) -> None:
     fake_uv = tmp_path / "uv"
     uv_log = tmp_path / "uv.log"
     fake_uv.write_text(
         """#!/bin/sh
 set -eu
-printf '%s\\n' "$*" >> "$SANEX_FAKE_UV_LOG"
+printf '%s\\n' "$@" >> "$SANEX_FAKE_UV_LOG"
+printf '%s\\n' '---' >> "$SANEX_FAKE_UV_LOG"
 mkdir -p -- "$UV_TOOL_DIR" "$UV_TOOL_BIN_DIR"
 for entrypoint in sanex sanex-indicator sanex-window-agent; do
     printf '#!/bin/sh\\nexit 0\\n' > "$UV_TOOL_BIN_DIR/$entrypoint"
@@ -130,11 +138,33 @@ done
         assert installed.read_bytes() == source.read_bytes()
         assert stat.S_IMODE(installed.stat().st_mode) == 0o644
 
-    invocations = uv_log.read_text().splitlines()
+    invocations = [block.splitlines() for block in uv_log.read_text().removesuffix("---\n").split("---\n")]
     assert len(invocations) == 2
-    assert all("tool install" in invocation for invocation in invocations)
+    assert all(invocation[:2] == ["tool", "install"] for invocation in invocations)
     assert all("--force" in invocation for invocation in invocations)
-    assert all(invocation.split()[-1] == expected_package for invocation in invocations)
+    assert all(invocation[-1] == expected_package for invocation in invocations)
+    assert all(
+        invocation[invocation.index("--default-index") + 1] == "https://pypi.org/simple" for invocation in invocations
+    )
+
+    if expected_library is not None:
+        assert all(invocation[invocation.index("--with") + 1] == expected_library for invocation in invocations)
+
+    else:
+        assert all("--with" not in invocation for invocation in invocations)
+
+
+def test_installer_rejects_package_with_github_mode_before_staging(tmp_path: Path) -> None:
+    destination = tmp_path / "root"
+
+    result = subprocess.run(
+        [f"{INSTALLER}", "--destdir", f"{destination}", "--from-github", "sanecmp-sanex==0.1.0"],
+        capture_output=True, text=True,
+    )
+
+    assert result.returncode == 1
+    assert "PACKAGE cannot be combined with --from-github" in result.stderr
+    assert not destination.exists()
 
 
 def test_wheel_contains_runtime_only(tmp_path: Path) -> None:
