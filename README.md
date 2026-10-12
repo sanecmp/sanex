@@ -35,7 +35,7 @@ Unit tests simulate external resource boundaries. CLI commands are installed wit
 A safe staged installation can be inspected without invoking systemd:
 
 ```bash
-./install.sh --destdir /tmp/sanex-root /path/to/sanex.whl
+./install.sh --destdir /tmp/sanex-root --uv "$(command -v uv)" /path/to/sanex.whl
 ```
 
 ## System installation
@@ -44,6 +44,21 @@ A system Python 3.12+, curl and a root-owned system uv are required. Python and
 uv, including their containing directories, must not be writable by the child.
 The default Python is `/usr/bin/python3`; `--python` and `--uv` accept other
 protected paths. The installer does not download a managed Python.
+
+The standard uv installation puts its executables in the current user's
+`~/.local/bin`. That copy is not suitable for the root service or its self-updates,
+and `install.sh` does not search user directories. Install a separate root-owned
+copy in `/usr/local/bin`, without changing shell profiles:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh \
+    | sudo env UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 sh
+```
+
+These options are documented in the
+[official uv installer reference](https://docs.astral.sh/uv/reference/installer/).
+Running the uv installer with only `sudo sh` uses root's user directory instead
+of the system PATH and does not solve this prerequisite.
 
 A real installation changes `/opt`, `/var/log`, `/etc/systemd/system`, `/etc/xdg/autostart`, and `/etc/logrotate.d`, so it must run as root:
 

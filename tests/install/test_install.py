@@ -42,6 +42,42 @@ def test_installer_has_valid_shell_syntax_and_help() -> None:
 
 
 @pytest.mark.parametrize(
+    ("staging", "uv_command", "expected_message"),
+    [
+        pytest.param(
+            False, "uv", "UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 sh", id="system-installation",
+        ),
+        pytest.param(True, "uv", "use --uv \"$(command -v uv)\"", id="staged-installation"),
+        pytest.param(False, "missing-uv", "executable not found: missing-uv", id="explicit-command"),
+    ],
+)
+def test_installer_reports_missing_uv_before_installing(
+    tmp_path: Path, staging: bool, uv_command: str, expected_message: str,
+) -> None:
+    """Simulate root and command discovery without privileges or system writes."""
+    destination = tmp_path / "root"
+    shell_script = """
+id() { printf '0\\n'; }
+command() { return 1; }
+install() { exit 99; }
+installer=$1
+shift
+. "$installer"
+"""
+    arguments = ["--destdir", f"{destination}"] if staging else []
+
+    result = subprocess.run(
+        ["sh", "-c", shell_script, "sh", f"{INSTALLER}", *arguments, "--uv", uv_command],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert expected_message in result.stderr
+    assert not (destination / "opt").exists()
+
+
+@pytest.mark.parametrize(
     ("package_arguments", "expected_package", "expected_library"),
     [
         pytest.param([], "sanecmp-sanex", None, id="default-package"),

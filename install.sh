@@ -15,6 +15,8 @@ an exact requirement or a local wheel path. --destdir stages an installation
 without invoking systemd and is intended for packaging and automated checks.
 --from-github installs sanex and sanelib from the main branches of their GitHub
 repositories and requires git. PACKAGE cannot be combined with this mode.
+A real installation requires root-owned uv on the system PATH or at --uv PATH.
+For --destdir, --uv may point to a user-installed executable.
 USAGE
 }
 
@@ -42,7 +44,18 @@ resolve_executable() {
         */*) candidate=$value ;;
         *) candidate=$(command -v "$value" 2>/dev/null || true) ;;
     esac
-    [ -n "$candidate" ] || fail "executable not found: $value"
+    if [ -z "$candidate" ]; then
+        if [ "$value" = uv ]; then
+            if [ "$staging" -eq 1 ]; then
+                fail 'uv is not on the system PATH; use --uv "$(command -v uv)" for a staged installation'
+            fi
+            fail 'system uv not found. Install a root-owned copy first:
+  curl -LsSf https://astral.sh/uv/install.sh \
+    | sudo env UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 sh
+A user-owned uv cannot be used by the root service.'
+        fi
+        fail "executable not found: $value"
+    fi
     candidate=$(readlink -f "$candidate")
     [ -x "$candidate" ] || fail "not executable: $candidate"
     if [ "$staging" -eq 1 ]; then
