@@ -85,6 +85,14 @@ When sanea runs on another computer, its installer adds local IP addresses to
 After registration, `sanex.path` starts `sanex.service` automatically. The status indicator starts automatically when a user next signs in to GNOME; installation does not modify already running sessions. Use a local wheel path instead of the indexed requirement to install an unpublished build.
 The private technical log is written to `/var/log/sanex/sanex.log` and rotated automatically.
 
+The indicator remains visible without time limits and shows a warning if the
+service is unavailable. GNOME needs an enabled AppIndicator/StatusNotifier
+extension to display it. To diagnose startup, run `/opt/sanex/bin/sanex-indicator`
+as the logged-in user, without sudo. When the process is outside a logind session,
+the indicator selects that user's unique non-closing graphical session. If there
+are several, use `loginctl list-sessions` and pass the intended session explicitly
+with `--session SESSION-ID`.
+
 uv's managed application environment is `/opt/sanex/bundle/sanecmp-sanex`.
 Configuration and counters stay in separate protected directories under
 `/opt/sanex`, outside that environment. Self-updates install the exact

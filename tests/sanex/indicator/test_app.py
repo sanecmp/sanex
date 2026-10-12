@@ -246,3 +246,31 @@ async def test_application_factory_closes_logind_after_connect_failure(monkeypat
         await app.create_application(Path("/test/indicator.sock"))
 
     logind.close.assert_called_once_with()
+
+
+@pytest.mark.asyncio
+async def test_application_factory_discovers_session_with_process_uid(monkeypatch: pytest.MonkeyPatch) -> None:
+    logind = SimpleNamespace(connect=AsyncMock(), get_session_ident=AsyncMock(return_value="2"), close=Mock())
+    monkeypatch.setattr(app, "LogindClient", lambda: logind)
+    monkeypatch.setattr(app.os, "getpid", lambda: 1234)
+    monkeypatch.setattr(app.os, "getuid", lambda: 1001)
+    monkeypatch.setattr(app, "installed_version", lambda: "1.2.3")
+    monkeypatch.delenv("XDG_SESSION_ID", raising=False)
+
+    application = await app.create_application(Path("/test/indicator.sock"))
+
+    logind.get_session_ident.assert_awaited_once_with(1234, uid=1001)
+    logind.close.assert_called_once_with()
+    assert application.client.sess_ident == "2"
+
+
+@pytest.mark.asyncio
+async def test_explicit_session_does_not_require_process_session_discovery(monkeypatch: pytest.MonkeyPatch) -> None:
+    logind_factory = Mock(side_effect=AssertionError("logind discovery must not run"))
+    monkeypatch.setattr(app, "LogindClient", logind_factory)
+    monkeypatch.setattr(app, "installed_version", lambda: "1.2.3")
+
+    application = await app.create_application(Path("/test/indicator.sock"), "3")
+
+    logind_factory.assert_not_called()
+    assert application.client.sess_ident == "3"

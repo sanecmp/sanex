@@ -183,7 +183,7 @@ async def create_application(
         logind = LogindClient()
         try:
             await logind.connect()
-            sess_ident = await logind.get_session_ident(os.getpid())
+            sess_ident = await logind.get_session_ident(os.getpid(), uid=os.getuid())
         finally:
             close_resources(("close session discovery", logind.close))
 

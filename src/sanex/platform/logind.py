@@ -175,11 +175,14 @@ class LogindClient:
         except DBUS_OPERATION_ERRORS as error:
             raise LogindError("list sessions", error) from error
 
-    async def get_session_ident(self, pid: int) -> str:
-        """Return the logind session identity containing one process."""
+    async def get_session_ident(self, pid: int, *, uid: int | None = None) -> str:
+        """Find a process session, falling back to one graphical session for the given UID."""
 
         if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
             raise LogindError("get process session", ValueError("PID is invalid"))
+
+        if uid is not None and (not isinstance(uid, int) or isinstance(uid, bool) or uid < 0):
+            raise LogindError("get process session", ValueError("UID is invalid"))
 
         bus = self._connected_bus()
         try:
@@ -193,6 +196,24 @@ class LogindClient:
                     body=[pid],
                 )
             )
+
+            if (
+                uid is not None
+                and reply.message_type is MessageType.ERROR
+                and reply.error_name == "org.freedesktop.login1.NoSessionForPID"
+            ):
+                # GNOME may launch applications in the per-user manager outside a session scope.
+                sessions = [
+                    session
+                    for session in await self.sessions()
+                    if session.uid == uid and session.state is not SessionState.CLOSING
+                ]
+
+                if len(sessions) != 1:
+                    raise ValueError(f"No unique graphical session for UID {uid}")
+
+                return sessions[0].ident
+
             raise_dbus_error(reply)
 
             if len(reply.body) != 1 or not isinstance(reply.body[0], str):
