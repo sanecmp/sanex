@@ -135,6 +135,7 @@ async def test_walk_uses_one_session_snapshot_and_routes_observations_by_uid(
     assert window_source.calls == ["3"]
     assert result.timestamp == WALL_TIMESTAMP
     assert result.elapsed == 2
+    assert result.sessions == sessions
     assert [item.uid for item in result.accounts] == [1001, 1002]
     assert first.calls[0][0][0].session.ident == "3"
     assert first.calls[0][0][0].snapshot is not None

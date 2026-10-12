@@ -14,6 +14,8 @@ from sanelib.protocol import Config, decode_config
 from sanex.accounting.clock import ActiveTimeClock
 from sanex.accounting.runtime import AccountRuntime
 from sanex.exceptions import ServiceError
+from sanex.model.indicator import IndicatorStatus
+from sanex.model.session import LoginSession, SessionState, SessionType
 from sanex.model.state import RuntimeState, decode_runtime_state
 from sanex.model.window import AtspiWindowSnapshot
 from sanex.platform.process import ProcessReader, WindowProcessResolver
@@ -32,6 +34,7 @@ from sanex.storage.state import RuntimeStateStore
 @dataclass(frozen=True, slots=True)
 class FakeWalkResult:
     timestamp: int
+    sessions: tuple[LoginSession, ...] = ()
 
 
 class FakeSupervisor:
@@ -63,6 +66,7 @@ class FakeLogind:
         self.connected = False
         self.monitoring = False
         self.closed = False
+        self.snapshot: tuple[LoginSession, ...] = ()
 
     async def connect(self) -> None:
         self.connected = True
@@ -80,8 +84,8 @@ class FakeLogind:
 
         return self.sleep_changes.pop(0)
 
-    async def sessions(self) -> tuple[object, ...]:
-        return ()
+    async def sessions(self) -> tuple[LoginSession, ...]:
+        return self.snapshot
 
     async def terminate(self, ident: str) -> None:
         return None
@@ -94,9 +98,10 @@ class FakeLogind:
 class FakeWindowAgents:
     def __init__(self) -> None:
         self.closed = False
+        self.observed: list[tuple[LoginSession, ...]] = []
 
-    async def reconcile(self, sessions: tuple[object, ...]) -> None:
-        return None
+    async def reconcile(self, sessions: tuple[LoginSession, ...]) -> None:
+        self.observed.append(sessions)
 
     async def windows(self, session: object) -> AtspiWindowSnapshot:
         return AtspiWindowSnapshot()
@@ -128,12 +133,16 @@ class FakeIndicatorServer:
         self.started = False
         self.closed = False
         self.published: list[int] = []
+        self.on_publish: Callable[[int], None] | None = None
 
     async def start(self) -> None:
         self.started = True
 
     def publish(self, timestamp: int) -> None:
         self.published.append(timestamp)
+
+        if self.on_publish is not None:
+            self.on_publish(timestamp)
 
     async def close(self) -> None:
         self.closed = True
@@ -186,6 +195,14 @@ def runtime_for_service(config: Config) -> AccountRuntime:
             wnds=[],
             occurrences=[],
         ),
+    )
+
+
+def indicator_session(uid: int = 1001, state: SessionState = SessionState.ACTIVE) -> LoginSession:
+    """Build a synthetic graphical session without system discovery."""
+    return LoginSession(
+        ident="3", uid=uid, login=f"user-{uid}", path="/session/3", started=1_790_956_700,
+        type=SessionType.WAYLAND, state=state, active=True, idle=False, locked=False,
     )
 
 
@@ -350,6 +367,98 @@ async def test_service_starts_walks_saves_and_closes_resources(
     assert indicator.started
     assert indicator.published == [1_790_956_800]
     assert indicator.closed
+
+
+@pytest.mark.parametrize("configured_uid", [1001, 1002], ids=["collection-disabled", "unconfigured-account"])
+@pytest.mark.asyncio
+async def test_indicator_is_available_without_collecting_account_data(
+    tmp_path: Path, config_payload: dict[str, Any], configured_uid: int,
+) -> None:
+    config_payload["accounts"][0].update(uid=configured_uid, collect=False, apply=False)
+    factory = service_factory(tmp_path, config_payload, "boot-current")
+    logind = FakeLogind()
+    logind.snapshot = (indicator_session(),)
+    agents = FakeWindowAgents()
+    factory.logind_factory = lambda: logind
+    factory.window_agents_factory = lambda path: agents
+    service = factory.create()
+    service.install_signal_handlers = False
+    indicator = FakeIndicatorServer()
+    service.indicator_server = indicator
+    authorized: list[bool] = []
+    statuses: list[IndicatorStatus | None] = []
+
+    def receive(timestamp: int) -> None:
+        authorized.append(service.authorize_indicator(1001, "3"))
+        statuses.append(service.get_indicator_status(1001, "3", timestamp))
+        assert not service.authorize_indicator(1002, "3")
+        assert service.get_indicator_status(1002, "3", timestamp) is None
+        service.request_stop()
+
+    indicator.on_publish = receive
+    assert not service.authorize_indicator(1001, "3")
+
+    await service.run()
+
+    assert authorized == [True]
+    assert statuses == [IndicatorStatus(remaining=None, break_duration=0)]
+    assert agents.observed == [()]
+    assert all(runtime.state.sess_runs == [] for runtime in service.runtimes.values())
+    assert not service.authorize_indicator(1001, "3")
+
+
+@pytest.mark.parametrize("new_snapshot", [(), (indicator_session(state=SessionState.CLOSING),), (indicator_session(uid=1002),)])
+@pytest.mark.asyncio
+async def test_indicator_revokes_access_when_session_ends_or_changes_owner(
+    tmp_path: Path, config_payload: dict[str, Any], new_snapshot: tuple[LoginSession, ...],
+) -> None:
+    config_payload["accounts"][0].update(collect=False, apply=False)
+    factory = service_factory(tmp_path, config_payload, "boot-current")
+    logind = FakeLogind()
+    logind.snapshot = (indicator_session(),)
+    factory.logind_factory = lambda: logind
+    factory.window_agents_factory = lambda path: FakeWindowAgents()
+    service = factory.create()
+    config_payload["ident"] += 1
+
+    await service.apply_config(json.dumps(config_payload))
+
+    assert service.authorize_indicator(1001, "3")
+    assert service.get_indicator_status(1001, "3", 1_790_956_800) == IndicatorStatus(remaining=None, break_duration=0)
+    logind.snapshot = new_snapshot
+    config_payload["ident"] += 1
+
+    await service.apply_config(json.dumps(config_payload))
+
+    assert not service.authorize_indicator(1001, "3")
+    assert service.get_indicator_status(1001, "3", 1_790_956_800) is None
+
+
+@pytest.mark.asyncio
+async def test_indicator_keeps_limits_and_tracks_configuration_changes(
+    tmp_path: Path, config_payload: dict[str, Any],
+) -> None:
+    factory = service_factory(tmp_path, config_payload, "boot-current")
+    logind = FakeLogind()
+    logind.snapshot = (indicator_session(),)
+    factory.logind_factory = lambda: logind
+    factory.window_agents_factory = lambda path: FakeWindowAgents()
+    service = factory.create()
+    config_payload["ident"] += 1
+
+    await service.apply_config(json.dumps(config_payload))
+
+    assert service.authorize_indicator(1001, "3")
+    status = service.get_indicator_status(1001, "3", 1_790_956_800)
+    assert status is not None and status.limited
+    assert service.get_indicator_status(1001, "unknown", 1_790_956_800) is None
+    config_payload["ident"] += 1
+    config_payload["accounts"] = []
+
+    await service.apply_config(json.dumps(config_payload))
+
+    assert service.authorize_indicator(1001, "3")
+    assert service.get_indicator_status(1001, "3", 1_790_956_800) == IndicatorStatus(remaining=None, break_duration=0)
 
 
 @pytest.mark.asyncio

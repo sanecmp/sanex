@@ -47,6 +47,7 @@ class SupervisorResult:
 
     timestamp: int
     elapsed: int
+    sessions: tuple[LoginSession, ...]
     accounts: tuple[AccountWalkResult, ...]
 
 
@@ -124,6 +125,7 @@ class Supervisor:
         return SupervisorResult(
             timestamp=timestamp,
             elapsed=elapsed,
+            sessions=sessions,
             accounts=tuple(results),
         )
 

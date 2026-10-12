@@ -226,7 +226,7 @@ if [ "$staging" -eq 0 ]; then
 fi
 
 install -d $owner_options -m 0700 \
-    "$config_dir" "$config_dir/pki" "$state_dir" "$state_dir/accounts" "$log_dir"
+    "$config_dir" "$state_dir" "$state_dir/accounts" "$log_dir"
 install -d $owner_options -m 0755 \
     "$bundle_dir" "$bin_dir" "$(dirname -- "$unit_target")" \
     "$(dirname -- "$logrotate_target")" "$(dirname -- "$autostart_target")" \

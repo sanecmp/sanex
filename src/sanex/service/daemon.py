@@ -24,6 +24,7 @@ from ..indicator.server import (
 from ..indicator.status import IndicatorStatusBuilder
 from ..model.config import parse_config
 from ..model.indicator import IndicatorStatus
+from ..model.session import LoginSession, SessionState
 from ..model.state import RuntimeState
 from ..platform.accounts import AccountDiscovery
 from ..platform.logind import LogindClient
@@ -64,9 +65,10 @@ logger = logging.getLogger(__name__)
 
 
 class ServiceWalkResult(Protocol):
-    """Timestamp required from an accounting walk result."""
+    """Shared timestamp and graphical sessions from an accounting walk."""
 
     timestamp: int
+    sessions: tuple[LoginSession, ...]
 
 
 class ServiceSupervisor(Protocol):
@@ -190,6 +192,7 @@ class SanexService:
     _monitoring: bool = field(default=False, init=False, repr=False)
     _updating: bool = field(default=False, init=False, repr=False)
     _indicator_started: bool = field(default=False, init=False, repr=False)
+    _indicator_sessions: frozenset[tuple[int, str]] = field(default_factory=frozenset, init=False, repr=False)
 
     def request_stop(self) -> None:
         """Request an orderly stop at the next event-loop boundary."""
@@ -243,11 +246,7 @@ class SanexService:
                 clock=self.clock,
             )
             result = await self.supervisor.walk(existing=True)
-            indicator_server = self.indicator_server
-
-            if indicator_server is not None:
-                indicator_server.publish(result.timestamp)
-
+            self._publish_indicator(result)
             self._log_limit_changes(current_config, config)
             logger.info(
                 "Applied config %d, replacing %d, with %d account(s)",
@@ -359,9 +358,8 @@ class SanexService:
             await self._shutdown()
 
     def authorize_indicator(self, uid: int, sess_ident: str) -> bool:
-        """Allow a peer to read only its own currently observed session."""
-        runtime = self.runtimes.get(uid)
-        return runtime is not None and runtime.session_run(sess_ident) is not None
+        """Bind a peer to its real graphical session independently of collection."""
+        return (uid, sess_ident) in self._indicator_sessions
 
     def get_indicator_status(
         self,
@@ -370,18 +368,22 @@ class SanexService:
         timestamp: int,
     ) -> IndicatorStatus | None:
         """Build current indicator status for an authenticated local peer."""
-        runtime = self.runtimes.get(uid)
+
+        if not self.authorize_indicator(uid, sess_ident):
+            return None
+
         config = self.config
         account = next(
             (entry for entry in config.accounts if entry.uid == uid),
             None,
         )
 
-        if (
-            runtime is None
-            or account is None
-            or runtime.session_run(sess_ident) is None
-        ):
+        if account is None or not account.apply:
+            return IndicatorStatus(remaining=None, break_duration=0)
+
+        runtime = self.runtimes.get(uid)
+
+        if runtime is None or runtime.session_run(sess_ident) is None:
             return None
 
         return IndicatorStatusBuilder(
@@ -390,6 +392,7 @@ class SanexService:
         ).build(account, sess_ident, timestamp)
 
     async def _shutdown(self) -> None:
+        self._indicator_sessions = frozenset()
         errors: list[tuple[str, Exception]] = []
         try:
             self._save_runtimes()
@@ -468,10 +471,18 @@ class SanexService:
 
         async with self._state_lock:
             result = await self.supervisor.walk(existing=existing, elapsed=elapsed)
-            indicator_server = self.indicator_server
+            self._publish_indicator(result)
 
-            if indicator_server is not None:
-                indicator_server.publish(result.timestamp)
+    def _publish_indicator(self, result: ServiceWalkResult) -> None:
+        self._indicator_sessions = frozenset(
+            (session.uid, session.ident)
+            for session in result.sessions
+            if session.state is not SessionState.CLOSING
+        )
+        indicator_server = self.indicator_server
+
+        if indicator_server is not None:
+            indicator_server.publish(result.timestamp)
 
     def _save_runtimes(self) -> None:
 

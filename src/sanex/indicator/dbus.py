@@ -1,5 +1,7 @@
 """StatusNotifierItem and DBusMenu adapters for the desktop session bus."""
 
+import asyncio
+import logging
 import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -16,7 +18,7 @@ from dbus_fast.annotations import (
     DBusVariant,
 )
 from dbus_fast.aio import MessageBus
-from dbus_fast.constants import NameFlag, PropertyAccess, RequestNameReply
+from dbus_fast.constants import MessageType, NameFlag, PropertyAccess, RequestNameReply
 from dbus_fast.service import ServiceInterface, dbus_property, method, signal
 
 from ..exceptions import IndicatorError
@@ -33,6 +35,18 @@ WATCHER_SERVICE = "org.kde.StatusNotifierWatcher"
 WATCHER_PATH = "/StatusNotifierWatcher"
 WATCHER_INTERFACE = "org.kde.StatusNotifierWatcher"
 INDICATOR_INSTANCE_SERVICE = "org.sanecmp.SanexIndicator"
+_DBUS_SERVICE = "org.freedesktop.DBus"
+_DBUS_PATH = "/org/freedesktop/DBus"
+_WATCHER_MATCH = (
+    "type='signal',sender='org.freedesktop.DBus',"
+    "interface='org.freedesktop.DBus',member='NameOwnerChanged',"
+    f"path='{_DBUS_PATH}',arg0='{WATCHER_SERVICE}'"
+)
+_WATCHER_ABSENT_ERRORS = frozenset({
+    "org.freedesktop.DBus.Error.ServiceUnknown",
+    "org.freedesktop.DBus.Error.NameHasNoOwner",
+})
+logger = logging.getLogger(__name__)
 
 ROOT_ITEM = 0
 STATUS_ITEM = 1
@@ -82,6 +96,10 @@ class SessionBus(Protocol):
     ) -> RequestNameReply: ...
 
     async def call(self, message: Message) -> Message: ...
+
+    def add_message_handler(self, handler: Callable[[Message], Message | bool | None]) -> None: ...
+
+    def remove_message_handler(self, handler: Callable[[Message], Message | bool | None]) -> None: ...
 
     def export(self, path: str, interface: ServiceInterface) -> None: ...
 
@@ -488,6 +506,8 @@ class IndicatorDesktopService:
     _bus: SessionBus | None = field(default=None, init=False, repr=False)
     _item: StatusNotifierItemInterface = field(init=False, repr=False)
     _menu: DbusMenuInterface = field(init=False, repr=False)
+    _watcher_changed: asyncio.Event = field(default_factory=asyncio.Event, init=False, repr=False)
+    _watcher_task: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self._item = StatusNotifierItemInterface(self.presentation)
@@ -503,6 +523,7 @@ class IndicatorDesktopService:
 
         bus = self.bus_factory()
         exported_paths: list[str] = []
+        subscribed = False
         transferred = False
         service_name = f"org.freedesktop.StatusNotifierItem-{self.process_ident}-1"
         try:
@@ -539,17 +560,25 @@ class IndicatorDesktopService:
             bus.export(STATUS_ITEM_PATH, self._item)
             exported_paths.append(MENU_PATH)
             bus.export(MENU_PATH, self._menu)
+            subscribed = True
+            bus.add_message_handler(self._handle_watcher_change)
             response = await bus.call(
                 Message(
-                    destination=WATCHER_SERVICE,
-                    path=WATCHER_PATH,
-                    interface=WATCHER_INTERFACE,
-                    member="RegisterStatusNotifierItem",
+                    destination=_DBUS_SERVICE,
+                    path=_DBUS_PATH,
+                    interface=_DBUS_SERVICE,
+                    member="AddMatch",
                     signature="s",
-                    body=[service_name],
+                    body=[_WATCHER_MATCH],
                 )
             )
             raise_dbus_error(response)
+            self._watcher_changed.clear()
+            await self._register_watcher(bus, service_name)
+            self._watcher_task = asyncio.create_task(
+                self._watch_watcher(bus, service_name),
+                name="sanex-indicator-watcher",
+            )
             self._bus = bus
             transferred = True
             return True
@@ -560,7 +589,13 @@ class IndicatorDesktopService:
         finally:
 
             if not transferred:
+                operations = []
+
+                if subscribed:
+                    operations.append(("remove watcher handler", lambda: bus.remove_message_handler(self._handle_watcher_change)))
+
                 close_resources(
+                    *operations,
                     *(("unexport desktop interface", lambda path=path: bus.unexport(path)) for path in exported_paths),
                     ("disconnect desktop bus", bus.disconnect),
                 )
@@ -575,16 +610,75 @@ class IndicatorDesktopService:
         self._item.update(presentation)
         self._menu.update(presentation)
 
-    def close(self) -> None:
+    async def close(self) -> None:
         """Unexport the item and disconnect from the session bus."""
         bus = self._bus
+        watcher_task = self._watcher_task
         self._bus = None
+        self._watcher_task = None
 
         if bus is None:
             return
 
-        close_resources(
-            ("unexport status item", lambda: bus.unexport(STATUS_ITEM_PATH)),
-            ("unexport menu", lambda: bus.unexport(MENU_PATH)),
-            ("disconnect desktop bus", bus.disconnect),
+        try:
+
+            if watcher_task is not None:
+                watcher_task.cancel()
+                try:
+                    await watcher_task
+
+                except asyncio.CancelledError:
+                    pass
+
+        finally:
+            close_resources(
+                ("remove watcher handler", lambda: bus.remove_message_handler(self._handle_watcher_change)),
+                ("unexport status item", lambda: bus.unexport(STATUS_ITEM_PATH)),
+                ("unexport menu", lambda: bus.unexport(MENU_PATH)),
+                ("disconnect desktop bus", bus.disconnect),
+            )
+
+    async def _register_watcher(self, bus: SessionBus, service_name: str) -> None:
+        response = await bus.call(
+            Message(
+                destination=WATCHER_SERVICE,
+                path=WATCHER_PATH,
+                interface=WATCHER_INTERFACE,
+                member="RegisterStatusNotifierItem",
+                signature="s",
+                body=[service_name],
+            )
         )
+
+        if response.message_type is MessageType.ERROR and response.error_name in _WATCHER_ABSENT_ERRORS:
+            logger.info("Waiting for StatusNotifierWatcher")
+            return
+
+        raise_dbus_error(response)
+
+    async def _watch_watcher(self, bus: SessionBus, service_name: str) -> None:
+
+        while True:
+            await self._watcher_changed.wait()
+            self._watcher_changed.clear()
+            try:
+                await self._register_watcher(bus, service_name)
+
+            except DBUS_OPERATION_ERRORS as error:
+                logger.warning("Unable to register desktop item with StatusNotifierWatcher: %s", error)
+
+    def _handle_watcher_change(self, message: Message) -> None:
+
+        if (
+            message.message_type is MessageType.SIGNAL
+            and message.sender == _DBUS_SERVICE
+            and message.path == _DBUS_PATH
+            and message.interface == _DBUS_SERVICE
+            and message.member == "NameOwnerChanged"
+            and message.signature == "sss"
+            and len(message.body) == 3
+            and message.body[0] == WATCHER_SERVICE
+            and isinstance(message.body[2], str)
+            and message.body[2]
+        ):
+            self._watcher_changed.set()

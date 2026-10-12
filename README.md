@@ -82,12 +82,22 @@ When sanea runs on another computer, its installer adds local IP addresses to
 `SANEA_ALLOWED_HOSTS`; see the
 [sanea network setup](https://github.com/sanecmp/sanea#home-network-access).
 
+Registration safely removes a protected, empty PKI directory left by an earlier
+installation. A directory containing any registration material is not removed
+or overwritten.
+
 After registration, `sanex.path` starts `sanex.service` automatically. The status indicator starts automatically when a user next signs in to GNOME; installation does not modify already running sessions. Use a local wheel path instead of the indexed requirement to install an unpublished build.
 The private technical log is written to `/var/log/sanex/sanex.log` and rotated automatically.
+Before registration, `sanex.service` remains inactive and the indicator reports
+that the service is unavailable; this is expected until registration creates
+the configuration file.
 
 The indicator remains visible without time limits and shows a warning if the
 service is unavailable. GNOME needs an enabled AppIndicator/StatusNotifier
-extension to display it. To diagnose startup, run `/opt/sanex/bin/sanex-indicator`
+extension to display it. The indicator waits for the extension to start and
+registers again if it restarts. Reading status does not enable account data
+collection; accounts without configured limits also receive an unlimited status.
+To diagnose startup, run `/opt/sanex/bin/sanex-indicator`
 as the logged-in user, without sudo. When the process is outside a logind session,
 the indicator selects that user's unique non-closing graphical session. If there
 are several, use `loginctl list-sessions` and pass the intended session explicitly

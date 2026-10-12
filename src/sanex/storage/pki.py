@@ -1,5 +1,6 @@
 """Pinned sanea PKI and pending registration material."""
 
+import errno
 import os
 import ssl
 import stat
@@ -87,8 +88,19 @@ class RegistrationPkiStore:
     def prepare(self) -> str:
         """Return a durable signed CSR, creating its P-256 key when absent."""
 
-        if self.permanent_root.exists():
-            raise RegistrationError("sanex is already registered")
+        if self.permanent_root.exists() or self.permanent_root.is_symlink():
+            self._validate_directory_chain(self.permanent_root.parent)
+            self._validate_protected_path(self.permanent_root, directory=True)
+            try:
+                # Older installers precreated this directory; rmdir cannot remove any saved material.
+                self.permanent_root.rmdir()
+
+            except OSError as error:
+
+                if error.errno in (errno.ENOTEMPTY, errno.EEXIST):
+                    raise RegistrationError("sanex is already registered") from error
+
+                raise StorageError("remove empty PKI directory", self.permanent_root, error) from error
 
         if not self.pending_root.exists():
             ensure_private_directory(self.pending_root.parent)

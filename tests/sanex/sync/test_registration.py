@@ -70,15 +70,21 @@ def issue_certificates(csr_pem: str) -> tuple[str, str]:
     )
 
 
+@pytest.mark.parametrize("precreated", [False, True], ids=["new-registration", "empty-installed-pki"])
 def test_creates_validates_and_atomically_promotes_registration_pki(
     tmp_path: Path,
     protected_ancestors: None,
     time_machine: time_machine.TimeMachineFixture,
+    precreated: bool,
 ) -> None:
     time_machine.move_to(datetime(2026, 10, 6, tzinfo=UTC), tick=False)
     permanent = tmp_path / "config" / "pki"
     pending = tmp_path / "config" / "tmp_pki"
     store = RegistrationPkiStore(permanent, pending, os.getuid())
+
+    if precreated:
+        permanent.parent.mkdir(mode=0o700)
+        permanent.mkdir(mode=0o700)
 
     csr = store.prepare()
     ca_pem, certificate_pem = issue_certificates(csr)
@@ -93,6 +99,59 @@ def test_creates_validates_and_atomically_promotes_registration_pki(
     assert not pending.exists()
     assert not (permanent / "client.csr").exists()
     assert (permanent / "client.key").stat().st_mode & 0o777 == 0o600
+
+
+def test_resumes_pending_registration_despite_empty_installed_pki(tmp_path: Path, protected_ancestors: None) -> None:
+    store = RegistrationPkiStore(tmp_path / "config" / "pki", tmp_path / "config" / "tmp_pki", os.getuid())
+    original_csr = store.prepare()
+    original_key = store.pending.key.read_bytes()
+    store.permanent_root.mkdir(mode=0o700)
+
+    assert store.prepare() == original_csr
+    assert store.pending.key.read_bytes() == original_key
+    assert not store.permanent_root.exists()
+
+
+def test_does_not_remove_existing_registration_material(tmp_path: Path, protected_ancestors: None) -> None:
+    store = RegistrationPkiStore(tmp_path / "config" / "pki", tmp_path / "config" / "tmp_pki", os.getuid())
+    store.permanent_root.parent.mkdir(mode=0o700)
+    store.permanent_root.mkdir(mode=0o700)
+    key_path = store.permanent_root / "client.key"
+    key_path.write_bytes(b"existing-private-key")
+
+    with pytest.raises(RegistrationError, match="already registered"):
+        store.prepare()
+
+    assert key_path.read_bytes() == b"existing-private-key"
+    assert not store.pending_root.exists()
+
+
+def test_does_not_remove_unprotected_empty_pki_directory(tmp_path: Path, protected_ancestors: None) -> None:
+    store = RegistrationPkiStore(tmp_path / "config" / "pki", tmp_path / "config" / "tmp_pki", os.getuid())
+    store.permanent_root.parent.mkdir(mode=0o700)
+    store.permanent_root.mkdir(mode=0o700)
+    store.permanent_root.chmod(0o755)
+
+    with pytest.raises(RegistrationError, match="not protected"):
+        store.prepare()
+
+    assert store.permanent_root.is_dir()
+    assert not store.pending_root.exists()
+
+
+def test_does_not_follow_permanent_pki_symlink(tmp_path: Path, protected_ancestors: None) -> None:
+    store = RegistrationPkiStore(tmp_path / "config" / "pki", tmp_path / "config" / "tmp_pki", os.getuid())
+    store.permanent_root.parent.mkdir(mode=0o700)
+    target = tmp_path / "empty-target"
+    target.mkdir(mode=0o700)
+    store.permanent_root.symlink_to(target)
+
+    with pytest.raises(RegistrationError, match="not protected"):
+        store.prepare()
+
+    assert store.permanent_root.is_symlink()
+    assert target.is_dir()
+    assert not store.pending_root.exists()
 
 
 def test_rejects_certificate_for_another_client_key(

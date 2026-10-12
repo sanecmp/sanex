@@ -59,7 +59,7 @@ class FakeDesktop:
     def update(self, presentation: IndicatorPresentation) -> None:
         self.presentations.append(presentation)
 
-    def close(self) -> None:
+    async def close(self) -> None:
         self.closed = True
 
 

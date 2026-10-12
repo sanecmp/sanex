@@ -133,7 +133,6 @@ done
 
     private_directories = (
         destination / "opt/sanex/config",
-        destination / "opt/sanex/config/pki",
         destination / "opt/sanex/state",
         destination / "opt/sanex/state/accounts",
         destination / "var/log/sanex",
@@ -142,6 +141,8 @@ done
     for directory in private_directories:
         assert directory.is_dir()
         assert stat.S_IMODE(directory.stat().st_mode) == 0o700
+
+    assert not (destination / "opt/sanex/config/pki").exists()
 
     for directory in (
         destination / "opt/sanex/bundle",
