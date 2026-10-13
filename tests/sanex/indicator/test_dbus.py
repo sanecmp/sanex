@@ -1,10 +1,12 @@
 """Tests for StatusNotifierItem and DBusMenu adapters."""
 
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from types import SimpleNamespace
 
 import pytest
-from dbus_fast import DBusError, Message
+import pytest_asyncio
+from dbus_fast import DBusError, Message, Variant
+from dbus_fast.aio import MessageBus
 from dbus_fast.constants import MessageType, NameFlag, RequestNameReply
 
 from sanex.indicator.dbus import (
@@ -126,6 +128,20 @@ class FakeBus:
             raise failure
 
 
+@pytest_asyncio.fixture
+async def menu_signal_bus(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[tuple[MessageBus, list[Message]]]:
+    """Capture outbound signals without connecting to the desktop session bus."""
+    bus = MessageBus(bus_address="unix:path=/sanex-test-unused")
+    messages: list[Message] = []
+    monkeypatch.setattr(MessageBus, "send", lambda _bus, message: messages.append(message))
+    try:
+        yield bus, messages
+
+    finally:
+        bus.unexport(MENU_PATH)
+        bus.disconnect()
+
+
 def test_builds_stable_menu_and_dispatches_about_action() -> None:
     opened: list[bool] = []
     presentation = IndicatorPresentationBuilder("1.2.3").build(
@@ -143,6 +159,97 @@ def test_builds_stable_menu_and_dispatches_about_action() -> None:
     )
     assert model.activate(ABOUT_ITEM, "clicked")
     assert opened == [True]
+
+
+@pytest.mark.parametrize(
+    "previous_status, status, expected_labels",
+    [
+        pytest.param(None, IndicatorStatus(remaining=None, break_duration=0), {STATUS_ITEM: "No time limit"}, id="reconnected"),
+        pytest.param(
+            IndicatorStatus(remaining=None, break_duration=0), None,
+            {STATUS_ITEM: "Sanex service is unavailable"}, id="disconnected",
+        ),
+        pytest.param(
+            IndicatorStatus(remaining=3600, break_duration=7200), IndicatorStatus(remaining=3540, break_duration=7140),
+            {STATUS_ITEM: "Time remaining: 59 min", BREAK_ITEM: "Required break: 1 h 59 min"}, id="durations",
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_updates_cached_menu_labels_without_rebuilding_layout(
+    menu_signal_bus: tuple[MessageBus, list[Message]],
+    previous_status: IndicatorStatus | None,
+    status: IndicatorStatus | None,
+    expected_labels: dict[int, str],
+) -> None:
+    bus, messages = menu_signal_bus
+    builder = IndicatorPresentationBuilder("1.2.3")
+    menu = DbusMenuInterface(DbusMenuModel(builder.build(previous_status), lambda: None))
+    bus.export(MENU_PATH, menu)
+    messages.clear()
+    presentation = builder.build(status)
+
+    menu.update(presentation)
+    menu.update(presentation)
+
+    assert len(messages) == 1
+    message = messages[0]
+    assert message.path == MENU_PATH
+    assert message.interface == MENU_INTERFACE
+    assert message.member == "ItemsPropertiesUpdated"
+    assert message.signature == "a(ia{sv})a(ias)"
+    assert message.body == [
+        [(ident, {"label": Variant("s", label), "enabled": Variant("b", False)}) for ident, label in expected_labels.items()],
+        [],
+    ]
+
+
+@pytest.mark.parametrize("break_duration", [0, 60], ids=["break-added", "break-removed"])
+@pytest.mark.asyncio
+async def test_updates_existing_labels_when_break_item_is_added_or_removed(
+    menu_signal_bus: tuple[MessageBus, list[Message]], break_duration: int,
+) -> None:
+    bus, messages = menu_signal_bus
+    builder = IndicatorPresentationBuilder("1.2.3")
+    previous = builder.build(IndicatorStatus(remaining=3600, break_duration=break_duration))
+    menu = DbusMenuInterface(DbusMenuModel(previous, lambda: None))
+    bus.export(MENU_PATH, menu)
+    messages.clear()
+    presentation = builder.build(IndicatorStatus(remaining=3540, break_duration=60 - break_duration))
+
+    menu.update(presentation)
+
+    assert [message.member for message in messages] == ["ItemsPropertiesUpdated", "LayoutUpdated"]
+    assert messages[0].body == [
+        [(STATUS_ITEM, {"label": Variant("s", "Time remaining: 59 min"), "enabled": Variant("b", False)})], [],
+    ]
+    assert messages[1].signature == "ui"
+    assert messages[1].body == [2, ROOT_ITEM]
+    children = menu.model.build_layout(ROOT_ITEM, -1, [])[1][2]
+    assert [child.value[0] for child in children] == list(menu.model.list_child_idents())
+    assert (BREAK_ITEM in menu.model.list_child_idents()) == (presentation.break_label is not None)
+
+
+@pytest.mark.parametrize(
+    "break_duration, expected_layouts",
+    [pytest.param(0, [], id="unchanged"), pytest.param(60, [[2, ROOT_ITEM]], id="break-added")],
+)
+@pytest.mark.asyncio
+async def test_emits_only_layout_update_when_menu_labels_are_unchanged(
+    menu_signal_bus: tuple[MessageBus, list[Message]], break_duration: int, expected_layouts: list[list[int]],
+) -> None:
+    bus, messages = menu_signal_bus
+    builder = IndicatorPresentationBuilder("1.2.3")
+    previous = builder.build(IndicatorStatus(remaining=None, break_duration=0))
+    menu = DbusMenuInterface(DbusMenuModel(previous, lambda: None))
+    bus.export(MENU_PATH, menu)
+    messages.clear()
+
+    menu.update(builder.build(IndicatorStatus(remaining=None, break_duration=break_duration)))
+
+    assert [(message.member, message.signature, message.body) for message in messages] == [
+        ("LayoutUpdated", "ui", body) for body in expected_layouts
+    ]
 
 
 def test_omits_zero_break_and_rejects_unknown_item() -> None:

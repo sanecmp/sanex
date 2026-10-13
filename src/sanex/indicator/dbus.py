@@ -365,10 +365,30 @@ class DbusMenuInterface(ServiceInterface):
         return ident, timestamp
 
     def update(self, presentation: IndicatorPresentation) -> None:
-        """Update menu labels and notify the host when they changed."""
+        """Notify property changes separately from menu structure changes."""
         model = self.model
+        previous_children = model.list_child_idents()
+        previous_properties = {
+            ident: model.get_properties(ident, [])
+            for ident in previous_children
+        }
 
-        if model.update(presentation):
+        if not model.update(presentation):
+            return
+
+        children = model.list_child_idents()
+        updated = [
+            (ident, properties)
+            for ident in children
+            if ident in previous_properties
+            and (properties := model.get_properties(ident, [])) != previous_properties[ident]
+        ]
+
+        # Layout notifications alone do not refresh cached item labels in GNOME.
+        if updated:
+            self.notify_properties_updated(updated, [])
+
+        if children != previous_children:
             self.notify_layout_updated(model.revision, ROOT_ITEM)
 
 
