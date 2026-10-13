@@ -282,7 +282,9 @@ def test_systemd_unit_preserves_update_and_accounting_requirements() -> None:
     assert "Restart=always" in content
     assert "ConditionPathExists=/opt/sanex/config/config.json" in content
     assert "ReadWritePaths=/opt/sanex /var/log/sanex" in content
-    assert "StandardError=append:/var/log/sanex/sanex.log" in content
+    assert "StandardOutput=journal" in content
+    assert "StandardError=journal" in content
+    assert "append:/var/log/sanex/sanex.log" not in content
     assert "ProtectProc=" not in content
     assert "copytruncate" in LOGROTATE.read_text()
 

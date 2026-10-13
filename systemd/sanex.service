@@ -15,8 +15,8 @@ ExecStart=/opt/sanex/bin/sanex service
 Restart=always
 RestartSec=10s
 TimeoutStopSec=20s
-StandardOutput=append:/var/log/sanex/sanex.log
-StandardError=append:/var/log/sanex/sanex.log
+StandardOutput=journal
+StandardError=journal
 
 NoNewPrivileges=yes
 PrivateDevices=yes
