@@ -223,12 +223,50 @@ def test_keeps_readable_window_when_parent_cannot_be_inspected(
     assert groups[0].process == process
 
 
+@pytest.mark.parametrize("prc_name", ["Telegram", "example_editor"])
+@pytest.mark.parametrize(
+    "cgroup_suffix",
+    [
+        "session.slice/dbus.service",
+        "session.slice/dbus-broker.service",
+        "session.slice/org.gnome.Shell@x11.service",
+        "background.slice/launcher.service",
+    ],
+)
+def test_keeps_application_windows_inherited_from_desktop_services(
+    tmp_path: Path,
+    atspi_payload: dict[str, Any],
+    process_payload: dict[str, Any],
+    prc_name: str,
+    cgroup_suffix: str,
+) -> None:
+    sample = dict(process_payload)
+    sample.update(
+        uid=1000,
+        prc_name=prc_name,
+        exe=f"/home/example/soft/{prc_name}/{prc_name}",
+        cgroup=f"/user.slice/user-1000.slice/user@1000.service/{cgroup_suffix}",
+        stat=sample["stat"].replace(f"({sample["prc_name"]})", f"({prc_name})"),
+        status=f"Name:\t{prc_name}\nUid:\t1000\t1000\t1000\t1000\n",
+    )
+    write_process(tmp_path, sample)
+    window = atspi_window(atspi_payload)
+
+    groups = WindowProcessResolver(ProcessReader(tmp_path)).resolve((window,), uid=1000)
+
+    assert len(groups) == 1
+    assert groups[0].process == process_identity(sample)
+    assert groups[0].windows == (window,)
+
+
 @pytest.mark.parametrize(
     ("changes", "ignored_prcs"),
     [
         ({"prc_name": "nautilus"}, ("nautilus",)),
         (
             {
+                "prc_name": "gnome-shell",
+                "exe": "/usr/bin/gnome-shell",
                 "cgroup": (
                     "/user.slice/user-1001.slice/user@1001.service/"
                     "session.slice/org.gnome.Shell@x11.service"
@@ -238,16 +276,22 @@ def test_keeps_readable_window_when_parent_cannot_be_inspected(
         ),
         (
             {
-                "cgroup": (
-                    "/user.slice/user-1001.slice/user@1001.service/"
-                    "background.slice/tracker.service"
-                )
+                "prc_name": "gnome-shell",
+                "exe": "/usr/bin/gnome-shell",
+                "cgroup": None,
             },
             (),
         ),
+        (
+            {
+                "prc_name": "Telegram",
+                "cgroup": "/user.slice/user-1001.slice/user@1001.service/session.slice/dbus.service",
+            },
+            ("Telegram",),
+        ),
     ],
 )
-def test_filters_configured_and_system_processes(
+def test_filters_configured_processes_and_the_desktop_shell(
     atspi_payload: dict[str, Any],
     process_payload: dict[str, Any],
     changes: dict[str, object],
@@ -256,8 +300,8 @@ def test_filters_configured_and_system_processes(
     process = process_identity(process_payload, **changes)
 
     class FakeReader:
-        def read(self, pid: int) -> ProcessIdentity:
-            return process
+        def read(self, pid: int) -> ProcessIdentity | None:
+            return process if pid == process.pid else None
 
     groups = WindowProcessResolver(FakeReader()).resolve(
         (atspi_window(atspi_payload),),

@@ -3,7 +3,7 @@
 import os
 from collections.abc import Iterable
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Protocol
 
 from pydantic import ValidationError
@@ -166,9 +166,12 @@ class WindowProcessResolver:
         descendants with the same executable, they belong to one application
         run. This groups browser-style workers without knowing any application
         names and keeps separately launched process trees apart. Cgroups are
-        not grouping keys because one application can span several scopes.
+        not grouping keys or application filters: one application can span
+        several scopes or inherit the desktop service of its launcher.
         """
-        ignored = frozenset(ignored_prcs)
+        # GNOME Shell exposes the desktop itself as an AT-SPI window. Ignore
+        # the shell's process, not other applications inheriting its cgroup.
+        ignored = frozenset(("gnome-shell", *ignored_prcs))
         identities: dict[int, ProcessIdentity | None] = {}
         roots: dict[tuple[int, int], ProcessIdentity] = {}
         grouped: dict[
@@ -184,11 +187,7 @@ class WindowProcessResolver:
 
             process = self._find_application_root(owner, identities)
 
-            if (
-                process.uid != uid
-                or process.prc_name in ignored
-                or self._is_system_component(process)
-            ):
+            if process.uid != uid or process.prc_name in ignored:
                 continue
 
             key = (process.pid, process.started)
@@ -254,13 +253,3 @@ class WindowProcessResolver:
             current = parent
 
         return current
-
-    @staticmethod
-    def _is_system_component(process: ProcessIdentity) -> bool:
-        cgroup = process.cgroup
-
-        if cgroup is None:
-            return False
-
-        components = set(PurePosixPath(cgroup).parts)
-        return bool({"session.slice", "background.slice"} & components)

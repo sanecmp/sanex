@@ -157,6 +157,46 @@ async def test_complete_snapshot_updates_all_counters_and_saves_periodically(
 
 
 @pytest.mark.asyncio
+async def test_application_inherited_from_dbus_is_reported_and_finished(
+    config_payload: dict[str, Any],
+    runtime_payload: dict[str, Any],
+) -> None:
+    config = decode_config(config_payload)
+    state = decode_runtime_state(runtime_payload)
+    state.occurrences[0].date = date(2026, 10, 2)
+    observation, process = account_observation(state)
+    process = process.model_copy(
+        update={
+            "prc_name": "Telegram",
+            "exe": "/home/example/soft/Telegram/Telegram",
+            "cgroup": "/user.slice/user-1001.slice/user@1001.service/session.slice/dbus.service",
+        },
+    )
+    state.prc_runs.clear()
+    state.wnds.clear()
+    cycle, terminator, closer, events, saver = build_cycle(config, state, process)
+    cycle.enforcement_enabled = False
+    closed = SessionObservation(observation.session, AtspiWindowSnapshot())
+
+    first = await cycle.run((observation,), ACTIVE_TIMESTAMP, elapsed=0)
+    started = await cycle.run((observation,), ACTIVE_TIMESTAMP + 5, elapsed=5)
+    ongoing = await cycle.run((observation,), ACTIVE_TIMESTAMP + 10, elapsed=5)
+    finished = await cycle.run((closed,), ACTIVE_TIMESTAMP + 12, elapsed=2)
+
+    assert first.events == ()
+    assert [event.type for event in started.events] == [EventType.PRC_START]
+    assert started.events[0].prc_name == "Telegram"
+    assert started.events[0].exe == process.exe
+    assert ongoing.events == ()
+    assert [event.type for event in finished.events] == [EventType.PRC_END]
+    assert finished.events[0].run_ident == started.events[0].seq
+    assert finished.events[0].duration == 12
+    assert len(events.events) == 2
+    assert state.prc_runs == []
+    assert state.wnds == []
+
+
+@pytest.mark.asyncio
 async def test_disabled_enforcement_keeps_accounting_without_external_actions(
     config_payload: dict[str, Any],
     runtime_payload: dict[str, Any],
