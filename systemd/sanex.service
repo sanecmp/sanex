@@ -19,6 +19,8 @@ StandardOutput=journal
 StandardError=journal
 
 NoNewPrivileges=yes
+# Preserve EUID switching for window agents when systemd installs seccomp filters.
+AmbientCapabilities=CAP_SETUID
 PrivateDevices=yes
 PrivateTmp=yes
 ProtectControlGroups=yes

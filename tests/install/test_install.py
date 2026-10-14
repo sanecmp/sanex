@@ -289,6 +289,15 @@ def test_systemd_unit_preserves_update_and_accounting_requirements() -> None:
     assert "copytruncate" in LOGROTATE.read_text()
 
 
+def test_systemd_unit_keeps_window_agent_uid_switching_with_hardening() -> None:
+    content = UNIT.read_text().splitlines()
+
+    assert "User=root" in content
+    assert "AmbientCapabilities=CAP_SETUID" in content
+    assert "NoNewPrivileges=yes" in content
+    assert "RestrictNamespaces=yes" in content
+
+
 def test_path_unit_starts_service_after_registration() -> None:
     content = PATH_UNIT.read_text()
 
