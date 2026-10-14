@@ -8,6 +8,7 @@ from typing import Self, TypeVar
 
 from dbus_fast import Message
 from dbus_fast.aio import MessageBus
+from dbus_fast.auth import AuthExternal, UID_NOT_SPECIFIED
 
 from ..exceptions import AtspiError
 from ..utils.resources import close_resources
@@ -51,7 +52,8 @@ def session_bus() -> SystemBus:
 
 def addressed_bus(address: str) -> SystemBus:
     """Create an unconnected bus for an explicit address."""
-    return MessageBus(bus_address=address)
+    # A window agent changes EUID but keeps its real UID as root.
+    return MessageBus(bus_address=address, auth=AuthExternal(uid=UID_NOT_SPECIFIED))
 
 
 @dataclass(slots=True)

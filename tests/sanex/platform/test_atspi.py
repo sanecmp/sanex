@@ -1,12 +1,15 @@
 """Tests for AT-SPI window discovery and close actions."""
 
 from typing import Any
+from unittest.mock import Mock
 
 import pytest
 from dbus_fast import Variant
+from dbus_fast.auth import AuthExternal, UID_NOT_SPECIFIED
 
 from sanex.exceptions import AtspiError
 from sanex.model.window import AtspiWindow, AtspiWindowReference, WindowRole
+from sanex.platform import atspi as atspi_module
 from sanex.platform.atspi import AtspiClient
 from tests.sanex.platform.fakes import FakeBus, dbus_error, dbus_reply
 
@@ -16,6 +19,21 @@ import asyncio
 def window_properties(sample: dict[str, Any]) -> dict[str, Variant]:
     """Build accessible property variants for one fixture window."""
     return {"Name": Variant("s", sample["title"])}
+
+
+def test_addressed_bus_authenticates_with_unix_peer_identity(monkeypatch: pytest.MonkeyPatch) -> None:
+    create_bus = Mock()
+    monkeypatch.setattr(atspi_module, "MessageBus", create_bus)
+
+    bus = atspi_module.addressed_bus("unix:path=/test/user-bus")
+
+    create_bus.assert_called_once()
+    options = create_bus.call_args.kwargs
+    assert options["bus_address"] == "unix:path=/test/user-bus"
+    authentication = options["auth"]
+    assert isinstance(authentication, AuthExternal)
+    assert authentication.uid == UID_NOT_SPECIFIED
+    assert bus is create_bus.return_value
 
 
 @pytest.mark.asyncio
