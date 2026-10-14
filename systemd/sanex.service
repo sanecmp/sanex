@@ -7,7 +7,9 @@ ConditionPathExists=/opt/sanex/config/config.json
 Type=simple
 User=root
 Group=root
-UMask=0077
+# Updated packages must remain readable by the user's indicator.
+# Private data and logs set their own restrictive permissions.
+UMask=0022
 RuntimeDirectory=sanex
 RuntimeDirectoryMode=0755
 WorkingDirectory=/opt/sanex
@@ -24,7 +26,9 @@ AmbientCapabilities=CAP_SETUID
 PrivateDevices=yes
 PrivateTmp=yes
 ProtectControlGroups=yes
-ProtectHome=yes
+# Hide home directories, but expose session D-Bus and AT-SPI sockets.
+ProtectHome=tmpfs
+BindReadOnlyPaths=/run/user
 ProtectKernelLogs=yes
 ProtectKernelModules=yes
 ProtectKernelTunables=yes

@@ -95,11 +95,13 @@ def test_installer_stages_complete_tree_and_is_repeatable(
 ) -> None:
     fake_uv = tmp_path / "uv"
     uv_log = tmp_path / "uv.log"
+    uv_umask_log = tmp_path / "uv.umask"
     fake_uv.write_text(
         """#!/bin/sh
 set -eu
 printf '%s\\n' "$@" >> "$SANEX_FAKE_UV_LOG"
 printf '%s\\n' '---' >> "$SANEX_FAKE_UV_LOG"
+umask > "$SANEX_FAKE_UV_UMASK_LOG"
 mkdir -p -- "$UV_TOOL_DIR" "$UV_TOOL_BIN_DIR"
 for entrypoint in sanex sanex-indicator sanex-window-agent; do
     printf '#!/bin/sh\\nexit 0\\n' > "$UV_TOOL_BIN_DIR/$entrypoint"
@@ -109,7 +111,7 @@ done
     )
     fake_uv.chmod(0o755)
     destination = tmp_path / "root"
-    environment = {"SANEX_FAKE_UV_LOG": f"{uv_log}"}
+    environment = {"SANEX_FAKE_UV_LOG": f"{uv_log}", "SANEX_FAKE_UV_UMASK_LOG": f"{uv_umask_log}"}
     command = [
         f"{INSTALLER}",
         "--destdir",
@@ -128,9 +130,11 @@ done
             capture_output=True,
             text=True,
             env=environment,
+            umask=0o077,
         )
         assert f"sanex staged successfully in {destination}." in result.stdout
 
+    assert int(uv_umask_log.read_text().strip(), 8) == 0o022
     private_directories = (
         destination / "opt/sanex/config",
         destination / "opt/sanex/state",
@@ -282,6 +286,7 @@ def test_systemd_unit_preserves_update_and_accounting_requirements() -> None:
     assert "Restart=always" in content
     assert "ConditionPathExists=/opt/sanex/config/config.json" in content
     assert "ReadWritePaths=/opt/sanex /var/log/sanex" in content
+    assert "UMask=0022" in content.splitlines()
     assert "StandardOutput=journal" in content
     assert "StandardError=journal" in content
     assert "append:/var/log/sanex/sanex.log" not in content
@@ -296,6 +301,14 @@ def test_systemd_unit_keeps_window_agent_uid_switching_with_hardening() -> None:
     assert "AmbientCapabilities=CAP_SETUID" in content
     assert "NoNewPrivileges=yes" in content
     assert "RestrictNamespaces=yes" in content
+
+
+def test_systemd_unit_exposes_user_runtime_without_exposing_homes() -> None:
+    content = UNIT.read_text().splitlines()
+
+    assert "ProtectHome=tmpfs" in content
+    assert "BindReadOnlyPaths=/run/user" in content
+    assert "PrivateTmp=yes" in content
 
 
 def test_path_unit_starts_service_after_registration() -> None:
