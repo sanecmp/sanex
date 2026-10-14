@@ -43,7 +43,7 @@ class SessionEnforcer:
         if decision.allowed or not decision.terminate:
             return False
 
-        run = self.runtime.session_run(sess_ident)
+        run = self.runtime.get_session_run(sess_ident)
 
         if run is None or run.terminate_requested is None:
             raise AccountingError("session termination decision has no persistent request")

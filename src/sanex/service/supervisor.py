@@ -21,7 +21,9 @@ logger = logging.getLogger(__name__)
 class SessionSource(Protocol):
     """Complete source of current graphical login sessions."""
 
-    async def sessions(self) -> tuple[LoginSession, ...]: ...
+    async def read_sessions(self) -> tuple[LoginSession, ...]:
+        """Read the graphical sessions currently available to the service."""
+        ...
 
 
 class SessionWindowSource(Protocol):
@@ -29,7 +31,9 @@ class SessionWindowSource(Protocol):
 
     async def reconcile(self, sessions: tuple[LoginSession, ...]) -> None: ...
 
-    async def windows(self, session: LoginSession) -> AtspiWindowSnapshot: ...
+    async def read_windows(self, session: LoginSession) -> AtspiWindowSnapshot:
+        """Read an accessibility snapshot for one reconciled session."""
+        ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,7 +95,7 @@ class Supervisor:
             raise AccountingError("supervisor elapsed time is invalid")
 
         timestamp = self._timestamp()
-        sessions = await self.session_source.sessions()
+        sessions = await self.session_source.read_sessions()
         observations = await self._observe_windows(sessions)
         by_uid: dict[int, list[SessionObservation]] = {
             uid: []
@@ -140,7 +144,7 @@ class Supervisor:
         )
         await self.window_source.reconcile(relevant)
         snapshots = await asyncio.gather(
-            *(self.window_source.windows(session) for session in relevant),
+            *(self.window_source.read_windows(session) for session in relevant),
             return_exceptions=True,
         )
         observations: list[SessionObservation] = []

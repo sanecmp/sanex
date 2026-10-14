@@ -164,14 +164,14 @@ class AccountRuntime:
             actor,
         )
 
-    def session_run(self, sess_ident: str) -> SessionRun | None:
+    def get_session_run(self, sess_ident: str) -> SessionRun | None:
         """Return the active statistical run for a login session."""
         return next(
             (entry for entry in self.state.sess_runs if entry.sess_ident == sess_ident),
             None,
         )
 
-    def active_session_usages(self, sess_ident: str) -> tuple[SessionUsage, ...]:
+    def get_active_session_usages(self, sess_ident: str) -> tuple[SessionUsage, ...]:
         """Return active quota usages for a login session across occurrences."""
         return tuple(
             usage
@@ -180,9 +180,9 @@ class AccountRuntime:
             if usage.ident == sess_ident and usage.active
         )
 
-    def latest_break_duration(self, sess_ident: str) -> int:
+    def get_latest_break_duration(self, sess_ident: str) -> int:
         """Return the latest active usage's configured mandatory break."""
-        usages = self.active_session_usages(sess_ident)
+        usages = self.get_active_session_usages(sess_ident)
 
         if not usages:
             return 0

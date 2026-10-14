@@ -68,7 +68,7 @@ def configure_logging(path: Path = DEFAULT_LOG_PATH) -> WatchedFileHandler:
 
 
 @contextmanager
-def logging_context(path: Path | None = DEFAULT_LOG_PATH) -> Iterator[None]:
+def use_logging(path: Path | None = DEFAULT_LOG_PATH) -> Iterator[None]:
     """Own CLI diagnostics and an optional technical log without changing root."""
     app_logger = logging.getLogger(TECHNICAL_LOGGER_NAME)
     original_handlers = tuple(app_logger.handlers)

@@ -83,7 +83,7 @@ def _reconcile_login_sessions(
     ended_runs = tuple(sorted(previous.values(), key=lambda run: run.sess_ident))
 
     for run in ended_runs:
-        usages = runtime.active_session_usages(run.sess_ident)
+        usages = runtime.get_active_session_usages(run.sess_ident)
         actor = (
             Actor.SANEX
             if run.terminate_requested is not None

@@ -45,12 +45,12 @@ ValueT = TypeVar("ValueT")
 logger = logging.getLogger(__name__)
 
 
-def session_bus() -> SystemBus:
+def create_session_bus() -> SystemBus:
     """Create an unconnected user session bus."""
     return MessageBus()
 
 
-def addressed_bus(address: str) -> SystemBus:
+def create_addressed_bus(address: str) -> SystemBus:
     """Create an unconnected bus for an explicit address."""
     # A window agent changes EUID but keeps its real UID as root.
     return MessageBus(bus_address=address, auth=AuthExternal(uid=UID_NOT_SPECIFIED))
@@ -60,8 +60,8 @@ def addressed_bus(address: str) -> SystemBus:
 class AtspiClient:
     """Discover and act on windows through a user's accessibility bus."""
 
-    session_bus_factory: Callable[[], SystemBus] = session_bus
-    atspi_bus_factory: Callable[[str], SystemBus] = addressed_bus
+    session_bus_factory: Callable[[], SystemBus] = create_session_bus
+    atspi_bus_factory: Callable[[str], SystemBus] = create_addressed_bus
     _bus: SystemBus | None = field(default=None, init=False, repr=False)
 
     async def __aenter__(self) -> Self:
@@ -135,7 +135,7 @@ class AtspiClient:
         except DBUS_OPERATION_ERRORS as error:
             raise AtspiError("disconnect", error) from error
 
-    async def windows(self) -> AtspiWindowSnapshot:
+    async def read_windows(self) -> AtspiWindowSnapshot:
         """Return top-level windows and mark each inaccessible snapshot part."""
         bus = self._connected_bus()
         try:

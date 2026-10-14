@@ -19,26 +19,27 @@ def test_process_identity_is_strict_and_frozen(process_payload: dict[str, Any]) 
     assert process.started == 5_753_094
     assert process.parent_pid == 1
 
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError, match="Instance is frozen"):
         process.pid = 1
 
 
 @pytest.mark.parametrize(
-    ("field", "value"),
+    ("field", "value", "message"),
     [
-        ("pid", 0),
-        ("parent_pid", -1),
-        ("parent_pid", None),
-        ("uid", -1),
-        ("started", -1),
-        ("prc_name", ""),
-        ("exe", ""),
+        pytest.param("pid", 0, "Input should be greater than 0", id="zero-pid"),
+        pytest.param("parent_pid", -1, "Input should be greater than or equal to 0", id="negative-parent-pid"),
+        pytest.param("parent_pid", None, "Input should be a valid integer", id="null-parent-pid"),
+        pytest.param("uid", -1, "Input should be greater than or equal to 0", id="negative-uid"),
+        pytest.param("started", -1, "Input should be greater than or equal to 0", id="negative-start"),
+        pytest.param("prc_name", "", "String should have at least 1 character", id="empty-name"),
+        pytest.param("exe", "", "String should have at least 1 character", id="empty-executable"),
     ],
 )
 def test_process_identity_rejects_invalid_values(
     process_payload: dict[str, Any],
     field: str,
     value: object,
+    message: str,
 ) -> None:
     values = {
         key: process_payload[key]
@@ -46,7 +47,7 @@ def test_process_identity_rejects_invalid_values(
     }
     values[field] = value
 
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError, match=rf"{field}\s+{message}"):
         ProcessIdentity.model_validate(values)
 
 

@@ -50,8 +50,8 @@ class SyncScheduler:
             try:
                 successful = await self.run_once()
 
-            except SaneaException:
-                logger.exception("Synchronization attempt failed")
+            except SaneaException as error:
+                logger.error("Synchronization attempt failed (%s)", type(error).__name__)
                 successful = False
 
             if successful:

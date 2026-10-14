@@ -22,7 +22,7 @@ class FakeBackend:
         self.snapshot = AtspiWindowSnapshot(windows=windows)
         self.closed: list[AtspiWindow] = []
 
-    async def windows(self) -> AtspiWindowSnapshot:
+    async def read_windows(self) -> AtspiWindowSnapshot:
         return self.snapshot
 
     async def close_window(self, window: AtspiWindow) -> bool:
@@ -66,7 +66,7 @@ async def test_client_and_server_exchange_snapshot_and_close_request(
     task = asyncio.create_task(server.serve())
     client = WindowAgentClient(1001, "3", root_reader, root_writer)
 
-    snapshot = await client.windows(login_session())
+    snapshot = await client.read_windows(login_session())
     accepted = await client.close_window(1001, "3", window)
     await client.close()
     await task
@@ -88,7 +88,7 @@ async def test_pool_rejects_uid_mismatch_without_using_agent_channel(
     pool.add(client)
 
     with pytest.raises(WindowAgentError, match="does not match 1002"):
-        await pool.windows(login_session(uid=1002))
+        await pool.read_windows(login_session(uid=1002))
 
     await client.close()
     agent_writer.close()

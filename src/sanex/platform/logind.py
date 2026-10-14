@@ -17,7 +17,7 @@ from .dbus import (
     SystemBus,
     property_value,
     raise_dbus_error,
-    system_bus,
+    create_system_bus,
 )
 
 
@@ -42,7 +42,7 @@ _SLEEP_MATCH = (
 class LogindClient:
     """Maintain one system-bus connection to systemd-logind."""
 
-    bus_factory: Callable[[], SystemBus] = system_bus
+    bus_factory: Callable[[], SystemBus] = create_system_bus
     _bus: SystemBus | None = field(default=None, init=False, repr=False)
     _sleep_changes: asyncio.Queue[bool] = field(default_factory=asyncio.Queue, init=False, repr=False)
     _sleep_monitoring: bool = field(default=False, init=False, repr=False)
@@ -139,7 +139,7 @@ class LogindClient:
             self._sleep_monitoring = False
             close_resources(("remove sleep handler", lambda: bus.remove_message_handler(self._handle_message)))
 
-    async def next_sleep_change(self) -> bool:
+    async def wait_for_sleep_change(self) -> bool:
         """Wait for the next PrepareForSleep state."""
 
         if not self._sleep_monitoring:
@@ -147,7 +147,7 @@ class LogindClient:
 
         return await self._sleep_changes.get()
 
-    async def sessions(self) -> tuple[LoginSession, ...]:
+    async def read_sessions(self) -> tuple[LoginSession, ...]:
         """Return all normal X11 and Wayland login sessions."""
         bus = self._connected_bus()
         try:
@@ -205,7 +205,7 @@ class LogindClient:
                 # GNOME may launch applications in the per-user manager outside a session scope.
                 sessions = [
                     session
-                    for session in await self.sessions()
+                    for session in await self.read_sessions()
                     if session.uid == uid and session.state is not SessionState.CLOSING
                 ]
 

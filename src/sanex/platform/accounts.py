@@ -17,7 +17,7 @@ from .dbus import (
     SystemBus,
     property_value,
     raise_dbus_error,
-    system_bus,
+    create_system_bus,
 )
 
 
@@ -56,9 +56,10 @@ class _AccountSource(Protocol):
 class AccountsServiceSource:
     """Read the complete cached-user snapshot from the system D-Bus."""
 
-    bus_factory: Callable[[], SystemBus] = system_bus
+    bus_factory: Callable[[], SystemBus] = create_system_bus
 
     async def discover(self) -> tuple[DiscoveredAccount, ...]:
+        """Read cached accounts, excluding system accounts and validating their identities."""
         bus = self.bus_factory()
         connected = False
         try:
@@ -138,6 +139,7 @@ class NssSource:
     passwd_provider: Callable[[], Sequence[pwd.struct_passwd]] = pwd.getpwall
 
     async def discover(self) -> tuple[DiscoveredAccount, ...]:
+        """Read normal local accounts with allowed login shells."""
         try:
             return await asyncio.to_thread(self._discover_sync)
 
@@ -209,6 +211,7 @@ class AccountDiscovery:
     fallback: _AccountSource = field(default_factory=NssSource)
 
     async def discover(self) -> tuple[DiscoveredAccount, ...] | None:
+        """Read AccountsService, falling back to NSS; return None if both sources fail."""
         try:
             return await self.primary.discover()
 

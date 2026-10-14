@@ -63,17 +63,24 @@ def test_invalid_stored_state_is_rejected(
         store.load(1001)
 
 
-@pytest.mark.parametrize("operation", ["load", "save"])
+@pytest.mark.parametrize(
+    ("operation", "message"),
+    [
+        pytest.param("load", "Failed to read", id="load"),
+        pytest.param("save", "Failed to prepare directory", id="save"),
+    ],
+)
 def test_filesystem_failures_use_application_exception(
     tmp_path: Path,
     runtime_payload: dict[str, Any],
     operation: str,
+    message: str,
 ) -> None:
     accounts_root = tmp_path / "accounts"
     accounts_root.write_bytes(b"not a directory")
     store = RuntimeStateStore(accounts_root)
 
-    with pytest.raises(StorageError):
+    with pytest.raises(StorageError, match=message):
 
         if operation == "load":
             store.load(1001)

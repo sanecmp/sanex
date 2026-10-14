@@ -17,7 +17,7 @@ from ..exceptions import (
     SyncTransportError,
 )
 from ..storage.events import EventPacket
-from .http import https_origin_url, request_timeout
+from .http import build_https_origin_url, create_request_timeout
 from .protocol import parse_sync_response
 
 
@@ -61,7 +61,7 @@ class SyncHttpClient:
     _client: httpx.AsyncClient = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        timeout = request_timeout()
+        timeout = create_request_timeout()
         limits = httpx.Limits(
             max_connections=MAX_CONNECTIONS,
             max_keepalive_connections=MAX_KEEPALIVE_CONNECTIONS,
@@ -224,7 +224,7 @@ class SyncHttpClient:
     @staticmethod
     def _url(base_url: str, path: str) -> httpx.URL:
         try:
-            return https_origin_url(base_url, path)
+            return build_https_origin_url(base_url, path)
 
         except ValueError as error:
             raise SyncProtocolError("$.base_url", f"{error}") from error

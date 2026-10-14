@@ -48,7 +48,7 @@ async def test_snapshot_keeps_normal_graphical_sessions(
     client = LogindClient(bus_factory=lambda: bus)
     await client.connect()
 
-    sessions = await client.sessions()
+    sessions = await client.read_sessions()
 
     assert sessions == (
         LoginSession(
@@ -220,7 +220,7 @@ async def test_inconsistent_session_properties_fail_the_whole_snapshot(
     await client.connect()
 
     with pytest.raises(LogindError, match="do not match ListSessions"):
-        await client.sessions()
+        await client.read_sessions()
 
 
 @pytest.mark.asyncio
@@ -228,7 +228,7 @@ async def test_client_requires_an_explicit_connection() -> None:
     client = LogindClient(bus_factory=lambda: FakeBus([]))
 
     with pytest.raises(LogindError, match="client is not connected"):
-        await client.sessions()
+        await client.read_sessions()
 
 
 @pytest.mark.asyncio
@@ -257,8 +257,8 @@ async def test_sleep_monitoring_reports_suspend_and_resume() -> None:
         )
     )
 
-    assert await client.next_sleep_change() is True
-    assert await client.next_sleep_change() is False
+    assert await client.wait_for_sleep_change() is True
+    assert await client.wait_for_sleep_change() is False
     add_match = bus.messages[0]
     assert add_match.member == "AddMatch"
     assert add_match.signature == "s"
@@ -270,7 +270,7 @@ async def test_sleep_monitoring_reports_suspend_and_resume() -> None:
     assert not bus.handlers
 
     with pytest.raises(LogindError, match="sleep monitoring is not active"):
-        await client.next_sleep_change()
+        await client.wait_for_sleep_change()
 
 
 @pytest.mark.asyncio
@@ -301,7 +301,7 @@ async def test_failed_connection_disconnects_and_remains_unconnected(cancel: boo
     assert bus.disconnect_count == 1
 
     with pytest.raises(LogindError, match="client is not connected"):
-        await client.sessions()
+        await client.read_sessions()
 
 
 @pytest.mark.parametrize("operation", ["add_handler", "AddMatch"])
@@ -321,7 +321,7 @@ async def test_failed_subscription_removes_local_handler(operation: str, cancel:
     assert bus.handlers == []
 
     with pytest.raises(LogindError, match="sleep monitoring is not active"):
-        await client.next_sleep_change()
+        await client.wait_for_sleep_change()
 
     client.close()
     assert bus.disconnect_count == 1

@@ -124,11 +124,11 @@ class WindowAgentManager:
                     error,
                 )
 
-    async def windows(self, session: LoginSession) -> AtspiWindowSnapshot:
+    async def read_windows(self, session: LoginSession) -> AtspiWindowSnapshot:
         """Request a bounded-time snapshot from the exact session agent."""
         return await self._request(
             session.ident,
-            self.pool.windows(session),
+            self.pool.read_windows(session),
             "windows",
         )
 

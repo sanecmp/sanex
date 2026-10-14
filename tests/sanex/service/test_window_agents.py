@@ -35,7 +35,7 @@ class FakeBackend:
         if not blocked:
             self.release.set()
 
-    async def windows(self) -> AtspiWindowSnapshot:
+    async def read_windows(self) -> AtspiWindowSnapshot:
         await self.release.wait()
         return self.snapshot
 
@@ -183,7 +183,7 @@ async def test_reconcile_routes_requests_and_stops_removed_agent(
 
     await agents.reconcile((session,))
 
-    assert (await agents.windows(session)).windows == (window,)
+    assert (await agents.read_windows(session)).windows == (window,)
     assert await agents.close_window(session.uid, session.ident, window)
     assert launcher.backends[0].closed == [window]
 
@@ -270,7 +270,7 @@ async def test_request_timeout_stops_unresponsive_agent(
     await agents.reconcile((session,))
 
     with pytest.raises(WindowAgentError, match="windows.*session 2"):
-        await agents.windows(session)
+        await agents.read_windows(session)
 
     assert agents.pool.clients == {}
     assert launcher.processes[0].returncode is not None

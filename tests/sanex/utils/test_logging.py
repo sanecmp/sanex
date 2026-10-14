@@ -14,7 +14,7 @@ from sanex.utils.logging import (
     TECHNICAL_HANDLER_NAME,
     TECHNICAL_LOGGER_NAME,
     configure_logging,
-    logging_context,
+    use_logging,
 )
 
 
@@ -105,7 +105,7 @@ def test_context_closes_own_handlers_and_preserves_foreign_logging(
 
     try:
 
-        with logging_context(tmp_path / "log" / "sanex.log"):
+        with use_logging(tmp_path / "log" / "sanex.log"):
             owned = [handler for handler in app_logger.handlers if handler not in original_handlers]
             assert len(owned) == 2
             assert foreign in app_logger.handlers
@@ -133,7 +133,7 @@ def test_context_preserves_an_existing_technical_handler(tmp_path: Path, app_log
     app_logger.addHandler(foreign)
     original_handlers = tuple(app_logger.handlers)
 
-    with logging_context(tmp_path / "command" / "sanex.log"):
+    with use_logging(tmp_path / "command" / "sanex.log"):
         assert existing not in app_logger.handlers
 
     assert tuple(app_logger.handlers) == original_handlers
@@ -184,7 +184,7 @@ def test_context_cleans_all_handlers_and_restores_logging_when_closing_fails(
 
     with pytest.raises(expected_error, match=expected_text):
 
-        with logging_context(tmp_path / "log" / "sanex.log"):
+        with use_logging(tmp_path / "log" / "sanex.log"):
             owned = [handler for handler in app_logger.handlers if handler not in original_handlers]
             file_handler = next(handler for handler in owned if isinstance(handler, WatchedFileHandler))
             original_close = file_handler.close

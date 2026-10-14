@@ -20,6 +20,6 @@ def test_installed_version_uses_sanecmp_distribution(
 ) -> None:
     monkeypatch.setattr(version, "version", metadata_version)
 
-    assert version.installed_version() == expected
+    assert version.get_installed_version() == expected
 
     metadata_version.assert_called_once_with("sanecmp-sanex")

@@ -30,7 +30,9 @@ _HEADER = struct.Struct("!I")
 class WindowBackend(Protocol):
     """AT-SPI operations executed inside a user-session agent."""
 
-    async def windows(self) -> AtspiWindowSnapshot: ...
+    async def read_windows(self) -> AtspiWindowSnapshot:
+        """Read a complete accessibility snapshot for the agent session."""
+        ...
 
     async def close_window(self, window: AtspiWindow) -> bool: ...
 
@@ -84,7 +86,7 @@ class WindowAgentClient:
         if not self.sess_ident:
             raise WindowAgentError("create client", "session ident is empty")
 
-    async def windows(self, session: LoginSession) -> AtspiWindowSnapshot:
+    async def read_windows(self, session: LoginSession) -> AtspiWindowSnapshot:
         """Request a complete window snapshot for the bound session."""
         self._check_session(session.uid, session.ident)
         response = await self._exchange("windows")
@@ -189,9 +191,9 @@ class WindowAgentPool:
         """Remove and return a session agent."""
         return self.clients.pop(sess_ident, None)
 
-    async def windows(self, session: LoginSession) -> AtspiWindowSnapshot:
+    async def read_windows(self, session: LoginSession) -> AtspiWindowSnapshot:
         """Return a window snapshot from the exact UID/session agent."""
-        return await self._client(session.ident, session.uid).windows(session)
+        return await self._client(session.ident, session.uid).read_windows(session)
 
     async def close_window(
         self,
@@ -260,7 +262,7 @@ class WindowAgentServer:
                 return WindowsResponse(
                     ident=request.ident,
                     op="windows",
-                    snapshot=await self.backend.windows(),
+                    snapshot=await self.backend.read_windows(),
                 )
 
             return CloseResponse(

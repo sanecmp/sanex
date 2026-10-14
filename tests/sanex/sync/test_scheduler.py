@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from sanex.exceptions import SyncTransportError
+from sanex.sync.protocol import parse_sync_response
 from sanex.sync.scheduler import SyncScheduler
 
 
@@ -71,7 +72,7 @@ async def test_failed_exchange_is_retried_without_stopping_scheduler(
 ) -> None:
     exchange = SimpleNamespace(
         run=AsyncMock(
-            side_effect=(SyncTransportError("sync", OSError("offline")), True)
+            side_effect=(SyncTransportError("sync", OSError("IDLE_TEST_SYNTHETIC_SECRET")), True)
         ),
     )
     config = SimpleNamespace(sync_interval=300, discovery_interval=30)
@@ -87,7 +88,35 @@ async def test_failed_exchange_is_retried_without_stopping_scheduler(
         await scheduler.run(asyncio.Event())
 
     assert delays == [30, 300]
-    assert "Synchronization attempt failed" in caplog.text
+    assert "Synchronization attempt failed (SyncTransportError)" in caplog.text
+    assert "IDLE_TEST_SYNTHETIC_SECRET" not in caplog.text
+    assert all(record.exc_info is None for record in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_invalid_sync_response_is_retried_without_logging_input(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async def exchange_response() -> bool:
+        parse_sync_response(
+            b"{\"config\":null,\"commands\":[],\"audit_secret\":\"IDLE_TEST_SYNTHETIC_SECRET\"}"
+        )
+        return True
+
+    exchange = SimpleNamespace(run=exchange_response)
+    config = SimpleNamespace(sync_interval=300, discovery_interval=30)
+    waiter = AsyncMock(return_value=True)
+    stop_requested = asyncio.Event()
+    scheduler = SyncScheduler(lambda: config, exchange, waiter)
+
+    with caplog.at_level("ERROR"):
+        await scheduler.run(stop_requested)
+
+    waiter.assert_awaited_once_with(stop_requested, 30)
+    assert "Synchronization attempt failed (SyncProtocolError)" in caplog.text
+    assert "IDLE_TEST_SYNTHETIC_SECRET" not in caplog.text
+    assert "input_value" not in caplog.text
+    assert all(record.exc_info is None for record in caplog.records)
 
 
 @pytest.mark.asyncio

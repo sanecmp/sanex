@@ -53,7 +53,7 @@ from ..sync.update import (
     UpdateStateStore,
 )
 from .runtime import RuntimeRepository
-from ..version import installed_version
+from ..version import get_installed_version
 from .sync import ServiceSyncState
 from .supervisor import Supervisor
 from .window_agents import WindowAgentManager
@@ -90,7 +90,9 @@ class ServiceLogind(Protocol):
 
     async def stop_sleep_monitoring(self) -> None: ...
 
-    async def next_sleep_change(self) -> bool: ...
+    async def wait_for_sleep_change(self) -> bool:
+        """Wait for the next suspend or resume notification."""
+        ...
 
     def close(self) -> None: ...
 
@@ -145,6 +147,7 @@ class AccountCycleFactory:
         config: Config,
         runtimes: Mapping[int, AccountRuntime],
     ) -> dict[int, AccountCycle]:
+        """Create accounting, limits and window enforcement for one account."""
         return {
             account.uid: AccountCycle(
                 runtime=runtimes[account.uid],
@@ -286,7 +289,7 @@ class SanexService:
 
             while not self._stop_requested.is_set():
                 stop_task = asyncio.create_task(self._stop_requested.wait())
-                sleep_task = asyncio.create_task(self.logind.next_sleep_change())
+                sleep_task = asyncio.create_task(self.logind.wait_for_sleep_change())
                 try:
                     background_tasks = {stop_task, sleep_task}
 
@@ -383,7 +386,7 @@ class SanexService:
 
         runtime = self.runtimes.get(uid)
 
-        if runtime is None or runtime.session_run(sess_ident) is None:
+        if runtime is None or runtime.get_session_run(sess_ident) is None:
             return None
 
         return IndicatorStatusBuilder(
@@ -559,7 +562,7 @@ class SanexServiceFactory:
     account_discovery: AccountDiscovery = field(default_factory=AccountDiscovery)
     technical_log: TechnicalLog = field(default_factory=TechnicalLog)
     sync_client_factory: Callable[[ssl.SSLContext], SyncHttpClient] = SyncHttpClient
-    package_version: Callable[[], str] = installed_version
+    package_version: Callable[[], str] = get_installed_version
     effective_uid: Callable[[], int] = os.geteuid
     window_agents_factory: Callable[[Path], ServiceWindowAgents] = WindowAgentManager
     require_root: bool = True
@@ -660,7 +663,7 @@ class SanexServiceFactory:
             logger.warning("Sanex is not registered; synchronization is disabled")
             return
 
-        context = self.pki_paths.client_context()
+        context = self.pki_paths.create_client_context()
         client = self.sync_client_factory(context)
         handlers = {}
 

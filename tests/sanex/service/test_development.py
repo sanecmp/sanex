@@ -26,7 +26,7 @@ class FakeLogind:
     def __init__(self, sessions: tuple[LoginSession, ...]) -> None:
         self._sessions = sessions
 
-    async def sessions(self) -> tuple[LoginSession, ...]:
+    async def read_sessions(self) -> tuple[LoginSession, ...]:
         return self._sessions
 
 
@@ -42,7 +42,7 @@ class FakeAtspi:
         self.closed = True
         self.connected = False
 
-    async def windows(self) -> AtspiWindowSnapshot:
+    async def read_windows(self) -> AtspiWindowSnapshot:
         return AtspiWindowSnapshot()
 
 
@@ -100,9 +100,9 @@ async def test_development_adapters_are_limited_to_current_session() -> None:
         session_ident="own",
     )
 
-    assert await logind.sessions() == (own,)
+    assert await logind.read_sessions() == (own,)
     await windows.reconcile((own,))
-    assert (await windows.windows(own)).windows == ()
+    assert (await windows.read_windows(own)).windows == ()
     assert backend.connected
 
     with pytest.raises(ServiceError, match="another UID"):

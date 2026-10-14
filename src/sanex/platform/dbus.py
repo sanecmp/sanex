@@ -33,7 +33,7 @@ class SystemBus(Protocol):
     def disconnect(self) -> None: ...
 
 
-def system_bus() -> SystemBus:
+def create_system_bus() -> SystemBus:
     """Create an unconnected system bus."""
     return MessageBus(bus_type=BusType.SYSTEM)
 

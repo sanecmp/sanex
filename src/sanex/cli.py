@@ -10,8 +10,8 @@ from .exceptions import SaneaException, StorageError
 from .service.daemon import SanexServiceFactory
 from .service.development import DevelopmentEnvironment, DevelopmentPaths
 from .sync.registration import RegistrationServiceFactory
-from .utils.logging import DEFAULT_LOG_PATH, logging_context
-from .version import installed_version
+from .utils.logging import DEFAULT_LOG_PATH, use_logging
+from .version import get_installed_version
 
 
 logger = logging.getLogger(__name__)
@@ -23,7 +23,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--version",
         action="version",
-        version=f"%(prog)s {installed_version()}",
+        version=f"%(prog)s {get_installed_version()}",
     )
     commands = parser.add_subparsers(dest="command")
     commands.add_parser("service", help="run the sanex system service")
@@ -107,7 +107,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
 
-        with logging_context(log_path):
+        with use_logging(log_path):
 
             try:
 

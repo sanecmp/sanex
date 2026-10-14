@@ -72,6 +72,7 @@ class CurrentAccountDiscovery:
     uid: int = field(default_factory=os.getuid)
 
     async def discover(self) -> tuple[DiscoveredAccount, ...]:
+        """Describe only the account running this development process."""
         record = pwd.getpwuid(self.uid)
         login = record.pw_name
         display_name = record.pw_gecos.partition(",")[0].strip() or login
@@ -93,22 +94,28 @@ class CurrentSessionLogind:
     session_ident: str | None = None
 
     async def connect(self) -> None:
+        """Connect the underlying logind client."""
         await self.client.connect()
 
     def close(self) -> None:
+        """Disconnect the underlying logind client."""
         self.client.close()
 
     async def start_sleep_monitoring(self) -> None:
+        """Subscribe to suspend and resume notifications."""
         await self.client.start_sleep_monitoring()
 
     async def stop_sleep_monitoring(self) -> None:
+        """Release the suspend and resume subscription."""
         await self.client.stop_sleep_monitoring()
 
-    async def next_sleep_change(self) -> bool:
-        return await self.client.next_sleep_change()
+    async def wait_for_sleep_change(self) -> bool:
+        """Wait for the next suspend or resume notification."""
+        return await self.client.wait_for_sleep_change()
 
-    async def sessions(self) -> tuple[LoginSession, ...]:
-        sessions = await self.client.sessions()
+    async def read_sessions(self) -> tuple[LoginSession, ...]:
+        """Read the current account session and reject ambiguous matches."""
+        sessions = await self.client.read_sessions()
         current = tuple(session for session in sessions if self._is_current(session))
 
         if len(current) > 1:
@@ -117,6 +124,7 @@ class CurrentSessionLogind:
         return current
 
     async def terminate(self, ident: str) -> None:
+        """Reject session termination in safe development mode."""
         raise ServiceError("session termination is disabled in development mode")
 
     def _is_current(self, session: LoginSession) -> bool:
@@ -143,6 +151,7 @@ class CurrentSessionWindows:
     _sessions: frozenset[str] = field(default_factory=frozenset, init=False, repr=False)
 
     async def reconcile(self, sessions: tuple[LoginSession, ...]) -> None:
+        """Connect accessibility only while validated current sessions exist."""
 
         for session in sessions:
             self._validate_session(session)
@@ -157,13 +166,14 @@ class CurrentSessionWindows:
             self.client.close()
             self._connected = False
 
-    async def windows(self, session: LoginSession) -> AtspiWindowSnapshot:
+    async def read_windows(self, session: LoginSession) -> AtspiWindowSnapshot:
+        """Read windows only for a previously reconciled current session."""
         self._validate_session(session)
 
         if session.ident not in self._sessions or not self._connected:
             raise ServiceError("development window source is not reconciled")
 
-        return await self.client.windows()
+        return await self.client.read_windows()
 
     async def close_window(
         self,
@@ -171,9 +181,11 @@ class CurrentSessionWindows:
         sess_ident: str,
         window: AtspiWindow,
     ) -> bool:
+        """Reject window closing in safe development mode."""
         raise ServiceError("window closing is disabled in development mode")
 
     async def close(self) -> None:
+        """Clear observed sessions and release the accessibility connection."""
         self._sessions = frozenset()
 
         if self._connected:
@@ -200,6 +212,7 @@ class DevelopmentEnvironment:
     environment: Callable[[], Mapping[str, str]] = lambda: os.environ
 
     def create_registration(self) -> RegistrationService:
+        """Compose registration with state confined to the development root."""
         paths = self.paths
         return RegistrationService(
             pki=RegistrationPkiStore(
@@ -212,6 +225,7 @@ class DevelopmentEnvironment:
         )
 
     def create_service(self) -> SanexService:
+        """Compose a service that observes only the current account and session."""
         paths = self.paths
         uid = self.uid
         session_ident = self.environment().get("XDG_SESSION_ID") or None

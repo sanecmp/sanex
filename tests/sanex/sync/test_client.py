@@ -206,7 +206,7 @@ def test_missing_pki_material_is_reported_in_application_hierarchy(
 ) -> None:
 
     with pytest.raises(TlsConfigError, match="unable to load sanex PKI"):
-        PkiPaths(tmp_path / "missing").client_context()
+        PkiPaths(tmp_path / "missing").create_client_context()
 
 
 @pytest.mark.asyncio

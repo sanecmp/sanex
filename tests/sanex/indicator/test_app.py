@@ -254,7 +254,7 @@ async def test_application_factory_discovers_session_with_process_uid(monkeypatc
     monkeypatch.setattr(app, "LogindClient", lambda: logind)
     monkeypatch.setattr(app.os, "getpid", lambda: 1234)
     monkeypatch.setattr(app.os, "getuid", lambda: 1001)
-    monkeypatch.setattr(app, "installed_version", lambda: "1.2.3")
+    monkeypatch.setattr(app, "get_installed_version", lambda: "1.2.3")
     monkeypatch.delenv("XDG_SESSION_ID", raising=False)
 
     application = await app.create_application(Path("/test/indicator.sock"))
@@ -268,7 +268,7 @@ async def test_application_factory_discovers_session_with_process_uid(monkeypatc
 async def test_explicit_session_does_not_require_process_session_discovery(monkeypatch: pytest.MonkeyPatch) -> None:
     logind_factory = Mock(side_effect=AssertionError("logind discovery must not run"))
     monkeypatch.setattr(app, "LogindClient", logind_factory)
-    monkeypatch.setattr(app, "installed_version", lambda: "1.2.3")
+    monkeypatch.setattr(app, "get_installed_version", lambda: "1.2.3")
 
     application = await app.create_application(Path("/test/indicator.sock"), "3")
 

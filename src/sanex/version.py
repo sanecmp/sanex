@@ -3,7 +3,7 @@
 from importlib.metadata import PackageNotFoundError, version
 
 
-def installed_version() -> str:
+def get_installed_version() -> str:
     """Return the installed sanex distribution version."""
     try:
         return version("sanecmp-sanex")

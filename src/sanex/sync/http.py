@@ -9,7 +9,7 @@ DEFAULT_WRITE_TIMEOUT = 15.0
 DEFAULT_POOL_TIMEOUT = 5.0
 
 
-def request_timeout() -> httpx.Timeout:
+def create_request_timeout() -> httpx.Timeout:
     """Return bounded timeouts shared by all sanea HTTP operations."""
     return httpx.Timeout(
         connect=DEFAULT_CONNECT_TIMEOUT,
@@ -19,7 +19,7 @@ def request_timeout() -> httpx.Timeout:
     )
 
 
-def https_origin_url(base_url: str, path: str) -> httpx.URL:
+def build_https_origin_url(base_url: str, path: str) -> httpx.URL:
     """Append a fixed path to a strict credential-free HTTPS origin."""
     try:
         base = httpx.URL(base_url)

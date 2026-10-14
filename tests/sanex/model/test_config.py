@@ -28,7 +28,7 @@ def test_valid_configuration_is_typed_and_frozen(config_payload: dict[str, Any])
     assert limits is not None
     assert limits.session_rules[0].app_rules[0].prc_name_match is MatchType.EXACT
 
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError, match="Instance is frozen"):
         config.ident = 1
 
 

@@ -48,7 +48,7 @@ class SessionPolicyEvaluator:
         """Apply current account schedule and quotas to one live session."""
         require_nonnegative(timestamp, "policy timestamp")
         require_nonnegative(elapsed, "policy elapsed time")
-        run = self.runtime.session_run(sess_ident)
+        run = self.runtime.get_session_run(sess_ident)
 
         if run is None:
             raise AccountingError(f"session {sess_ident} has no active SessionRun")
@@ -67,7 +67,7 @@ class SessionPolicyEvaluator:
         selected = self.resolver.resolve(account.limits, timestamp)
 
         if selected is None:
-            break_duration = self.runtime.latest_break_duration(sess_ident)
+            break_duration = self.runtime.get_latest_break_duration(sess_ident)
             return _deny(run, timestamp, break_duration, SessionDenial.OUTSIDE_RANGE)
 
         if not selected.session_rule.apply:

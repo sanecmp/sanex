@@ -44,6 +44,7 @@ class InstallConfig(_UpdateModel):
     @field_validator("uv", "python")
     @classmethod
     def validate_absolute_path(cls, value: str) -> str:
+        """Require an absolute path for each configured update tool."""
 
         if not Path(value).is_absolute():
             raise ValueError("tool path must be absolute")
@@ -63,6 +64,7 @@ class UpdateState(UpdateCommandPayload):
     @field_validator("attempts")
     @classmethod
     def validate_attempts(cls, value: int) -> int:
+        """Require a positive attempt count rather than a boolean."""
 
         if isinstance(value, bool) or value < 1:
             raise ValueError("attempts must be a positive integer")
@@ -75,6 +77,7 @@ class InstallConfigStore:
     path: Path = DEFAULT_INSTALL_CONFIG_PATH
 
     def load(self) -> InstallConfig:
+        """Read and validate the recorded system update tools."""
         try:
             data = self.path.read_bytes()
 
@@ -89,6 +92,7 @@ class UpdateStateStore:
     path: Path = DEFAULT_UPDATE_STATE_PATH
 
     def load(self) -> UpdateState | None:
+        """Read an update attempt, or return None when no attempt is recorded."""
         try:
             data = self.path.read_bytes()
 
@@ -101,10 +105,12 @@ class UpdateStateStore:
         return parse_json_model(UpdateState, data, UpdateStateError)
 
     def save(self, state: UpdateState) -> None:
+        """Atomically persist the update attempt in a protected directory."""
         ensure_private_directory(self.path.parent)
         atomic_write_bytes(self.path, state.model_dump_json().encode())
 
     def delete(self) -> None:
+        """Remove the attempt marker and durably record the directory change."""
         try:
             self.path.unlink()
 
@@ -137,6 +143,7 @@ class UpdateRecovery:
     installed_version: Callable[[], str]
 
     def reconcile(self) -> None:
+        """Acknowledge a completed update only when its pending command still matches."""
         state = self.state_store.load()
 
         if state is None:
@@ -198,6 +205,7 @@ class RootExecutableValidator:
     required_uid: int = 0
 
     def validate(self, path: str) -> str:
+        """Resolve an executable and require protected ownership along both paths."""
         candidate = Path(path)
         try:
             resolved = candidate.resolve(strict=True)
@@ -262,6 +270,7 @@ class ExecProcessReplacer:
         arguments: Sequence[str],
         environment: Mapping[str, str],
     ) -> None:
+        """Send process output to the private log and replace this process with the update tool."""
         ensure_private_directory(self.log_path.parent)
         descriptor = -1
         try:
@@ -303,6 +312,7 @@ class UpdateHandler:
     tool_bin_dir: str = DEFAULT_TOOL_BIN_DIR
 
     async def run(self, command: Command) -> CommandResult:
+        """Validate and persist an update attempt before releasing service resources and executing uv."""
 
         if command.type != "update":
             return self._failed(command.ident, "invalid update command")

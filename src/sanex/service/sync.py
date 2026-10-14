@@ -13,7 +13,7 @@ from ..storage.events import EventPacket, EventStore
 from ..sync.commands import CommandStore
 from ..sync.exchange import SyncSnapshot
 from ..sync.log import TechnicalLog
-from ..version import installed_version
+from ..version import get_installed_version
 
 
 class SyncAccountDiscovery(Protocol):
@@ -42,7 +42,7 @@ class ServiceSyncState:
     accounts: SyncAccountDiscovery = field(default_factory=AccountDiscovery)
     technical_log: TechnicalLog = field(default_factory=TechnicalLog)
     hostname: Callable[[], str] = socket.gethostname
-    package_version: Callable[[], str] = installed_version
+    package_version: Callable[[], str] = get_installed_version
 
     async def prepare(self) -> SyncSnapshot:
         """Discover accounts and atomically freeze request data and event packets."""

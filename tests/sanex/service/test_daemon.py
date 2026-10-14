@@ -77,14 +77,14 @@ class FakeLogind:
     async def stop_sleep_monitoring(self) -> None:
         self.monitoring = False
 
-    async def next_sleep_change(self) -> bool:
+    async def wait_for_sleep_change(self) -> bool:
 
         while not self.sleep_changes:
             await asyncio.sleep(0)
 
         return self.sleep_changes.pop(0)
 
-    async def sessions(self) -> tuple[LoginSession, ...]:
+    async def read_sessions(self) -> tuple[LoginSession, ...]:
         return self.snapshot
 
     async def terminate(self, ident: str) -> None:
@@ -103,7 +103,7 @@ class FakeWindowAgents:
     async def reconcile(self, sessions: tuple[LoginSession, ...]) -> None:
         self.observed.append(sessions)
 
-    async def windows(self, session: object) -> AtspiWindowSnapshot:
+    async def read_windows(self, session: object) -> AtspiWindowSnapshot:
         return AtspiWindowSnapshot()
 
     async def close_window(
@@ -723,7 +723,7 @@ class FakePkiPaths:
         for path in (self.ca, self.certificate, self.key):
             path.touch()
 
-    def client_context(self) -> ssl.SSLContext:
+    def create_client_context(self) -> ssl.SSLContext:
         return ssl.create_default_context()
 
 

@@ -27,21 +27,21 @@ def test_login_session_is_strict_typed_and_frozen(session_payload: list[dict[str
     assert session.type is SessionType.WAYLAND
     assert session.state is SessionState.ACTIVE
 
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError, match="Instance is frozen"):
         session.active = False
 
 
 @pytest.mark.parametrize(
-    ("field", "value"),
+    ("field", "value", "message"),
     [
-        ("ident", ""),
-        ("uid", True),
-        ("started", -1),
-        ("type", "tty"),
-        ("state", "offline"),
+        pytest.param("ident", "", "String should have at least 1 character", id="empty-ident"),
+        pytest.param("uid", True, "Input should be a valid integer", id="boolean-uid"),
+        pytest.param("started", -1, "Input should be greater than or equal to 0", id="negative-start"),
+        pytest.param("type", "tty", "Input should be an instance of SessionType", id="untyped-session-type"),
+        pytest.param("state", "offline", "Input should be an instance of SessionState", id="untyped-session-state"),
     ],
 )
-def test_login_session_rejects_invalid_values(field: str, value: object) -> None:
+def test_login_session_rejects_invalid_values(field: str, value: object, message: str) -> None:
     payload = {
         "ident": "2",
         "uid": 1001,
@@ -56,5 +56,5 @@ def test_login_session_rejects_invalid_values(field: str, value: object) -> None
     }
     payload[field] = value
 
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError, match=rf"{field}\s+{message}"):
         LoginSession.model_validate(payload)

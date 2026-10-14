@@ -22,7 +22,7 @@ class FakeSessionSource:
         self.snapshot = sessions
         self.calls = 0
 
-    async def sessions(self) -> tuple[LoginSession, ...]:
+    async def read_sessions(self) -> tuple[LoginSession, ...]:
         self.calls += 1
         return self.snapshot
 
@@ -35,7 +35,7 @@ class FakeWindowSource:
     async def reconcile(self, sessions: tuple[LoginSession, ...]) -> None:
         return None
 
-    async def windows(self, session: LoginSession) -> AtspiWindowSnapshot:
+    async def read_windows(self, session: LoginSession) -> AtspiWindowSnapshot:
         self.calls.append(session.ident)
 
         if session.ident == self.error_ident:

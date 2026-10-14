@@ -7,7 +7,7 @@ import pytest
 
 from sanex import cli
 from sanex.cli import main
-from sanex.utils.logging import logging_context
+from sanex.utils.logging import use_logging
 
 import sys
 from sanex.exceptions import ServiceError
@@ -17,7 +17,7 @@ from sanex.utils import logging as log_module
 
 @pytest.fixture(autouse=True)
 def isolated_logging(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(cli, "logging_context", lambda path: logging_context(tmp_path / "sanex.log"))
+    monkeypatch.setattr(cli, "use_logging", lambda path: use_logging(tmp_path / "sanex.log"))
 
 
 def test_no_arguments_prints_help(capsys: pytest.CaptureFixture[str]) -> None:

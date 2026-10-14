@@ -6,7 +6,7 @@ import os
 import socket
 
 from ..exceptions import WindowAgentError
-from ..platform.atspi import AtspiClient, addressed_bus
+from ..platform.atspi import AtspiClient, create_addressed_bus
 from ..platform.window_agent import WindowAgentServer
 from ..utils.resources import close_async_resources, close_resources
 
@@ -26,7 +26,7 @@ async def run_agent(fd: int, uid: int, sess_ident: str) -> None:
         channel.setblocking(False)
         reader, writer = await asyncio.open_connection(sock=channel)
         user_bus_address = f"unix:path=/run/user/{uid}/bus"
-        client = AtspiClient(session_bus_factory=lambda: addressed_bus(user_bus_address))
+        client = AtspiClient(session_bus_factory=lambda: create_addressed_bus(user_bus_address))
 
         try:
             os.seteuid(uid)

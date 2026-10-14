@@ -20,22 +20,23 @@ def test_window_snapshot_is_strict_and_frozen(atspi_payload: dict[str, Any]) -> 
 
     assert window.role is WindowRole.FRAME
 
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError, match="Instance is frozen"):
         window.title = "Other"
 
 
 @pytest.mark.parametrize(
-    ("field", "value"),
+    ("field", "value", "message"),
     [
-        ("bus", ""),
-        ("pid", 0),
-        ("role", 23),
+        pytest.param("bus", "", "String should have at least 1 character", id="empty-bus"),
+        pytest.param("pid", 0, "Input should be greater than 0", id="zero-pid"),
+        pytest.param("role", 23, "Input should be an instance of WindowRole", id="untyped-role"),
     ],
 )
 def test_window_snapshot_rejects_invalid_values(
     atspi_payload: dict[str, Any],
     field: str,
     value: object,
+    message: str,
 ) -> None:
     sample = atspi_payload["children"][0]
     values = {
@@ -47,5 +48,5 @@ def test_window_snapshot_rejects_invalid_values(
     }
     values[field] = value
 
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError, match=rf"{field}\s+{message}"):
         AtspiWindow.model_validate(values)

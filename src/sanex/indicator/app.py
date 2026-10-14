@@ -15,9 +15,9 @@ from ..exceptions import IndicatorError, SaneaException
 from ..localization import user_gettext
 from ..model.indicator import IndicatorStatus
 from ..platform.logind import LogindClient
-from ..utils.logging import logging_context
+from ..utils.logging import use_logging
 from ..utils.resources import close_async_resources, close_resources
-from ..version import installed_version
+from ..version import get_installed_version
 from .about import AboutDialog
 from .client import IndicatorStatusClient
 from .dbus import IndicatorDesktopService
@@ -75,7 +75,7 @@ class IndicatorApplication:
     desktop: DesktopService
     about: AboutService
     running_version: str | None = None
-    read_installed_version: Callable[[], str] = installed_version
+    read_installed_version: Callable[[], str] = get_installed_version
     replace_process: Callable[[], None] = replace_indicator_process
     install_signal_handlers: bool = True
     _stop_requested: asyncio.Event = field(
@@ -187,7 +187,7 @@ async def create_application(
         finally:
             close_resources(("close session discovery", logind.close))
 
-    version = installed_version()
+    version = get_installed_version()
     builder = IndicatorPresentationBuilder(version, translate=user_gettext())
     presentation = builder.build(None)
     about = AboutDialog(presentation.about)
@@ -220,7 +220,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--version",
         action="version",
-        version=f"%(prog)s {installed_version()}",
+        version=f"%(prog)s {get_installed_version()}",
     )
     return parser
 
@@ -235,7 +235,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Run the standalone desktop indicator entry point."""
     arguments = create_parser().parse_args(argv)
 
-    with logging_context(path=None):
+    with use_logging(path=None):
 
         try:
             asyncio.run(run_indicator(arguments.socket, arguments.session))

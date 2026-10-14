@@ -31,9 +31,9 @@ from ..exceptions import (
 from ..platform.accounts import AccountDiscovery
 from ..storage.config import DEFAULT_CONFIG_PATH, ConfigStore
 from ..storage.pki import RegistrationPkiStore
-from ..version import installed_version
+from ..version import get_installed_version
 from .discovery import DiscoveryMode, SaneaDiscovery, SaneaEndpoint
-from .http import https_origin_url, request_timeout
+from .http import build_https_origin_url, create_request_timeout
 
 
 MAX_REGISTRATION_RESPONSE_SIZE = 1_048_576
@@ -54,7 +54,9 @@ class RegistrationPki(Protocol):
 
     def save_issued(self, ca_pem: str, certificate_pem: str) -> None: ...
 
-    def client_context(self) -> ssl.SSLContext: ...
+    def create_client_context(self) -> ssl.SSLContext:
+        """Create a pinned TLS context from the pending registration material."""
+        ...
 
     def finalize(self) -> None: ...
 
@@ -85,6 +87,7 @@ class RegistrationHttpClient:
         base_url: str,
         request: RegistrationRequest,
     ) -> RegistrationIssueResponse:
+        """Request the server CA and issued client certificate using the registration code."""
         content = await self._post(
             "registration",
             base_url,
@@ -104,6 +107,7 @@ class RegistrationHttpClient:
         request: RegistrationConfirmRequest,
         context: ssl.SSLContext,
     ) -> RegistrationConfirmResponse:
+        """Confirm possession of the issued certificate and receive configuration."""
         content = await self._post(
             "registration confirmation",
             base_url,
@@ -128,7 +132,7 @@ class RegistrationHttpClient:
         expected_status: int,
     ) -> bytes:
         url = _registration_url(base_url, path)
-        timeout = request_timeout()
+        timeout = create_request_timeout()
         try:
 
             async with httpx.AsyncClient(
@@ -182,9 +186,10 @@ class RegistrationService:
     discovery: RegistrationDiscovery = field(default_factory=SaneaDiscovery)
     accounts: RegistrationAccounts = field(default_factory=AccountDiscovery)
     hostname: Callable[[], str] = socket.gethostname
-    version: Callable[[], str] = installed_version
+    version: Callable[[], str] = get_installed_version
 
     async def run(self, code: str) -> Config:
+        """Complete or resume registration without replacing existing certificate material."""
         try:
             code = validate_registration_code(code)
 
@@ -221,7 +226,7 @@ class RegistrationService:
                 version=self.version(),
                 accounts=accounts,
             ),
-            self.pki.client_context(),
+            self.pki.create_client_context(),
         )
         config = self.config_store.save(response.config.model_dump_json())
         self.pki.finalize()
@@ -239,6 +244,7 @@ class RegistrationServiceFactory:
     effective_uid: Callable[[], int] = os.geteuid
 
     def create(self) -> RegistrationService:
+        """Compose production registration only for a root process."""
 
         if self.effective_uid() != 0:
             raise RegistrationError("registration must run as root")
@@ -251,7 +257,7 @@ class RegistrationServiceFactory:
 
 def _registration_url(base_url: str, path: str) -> httpx.URL:
     try:
-        return https_origin_url(base_url, path)
+        return build_https_origin_url(base_url, path)
 
     except ValueError as error:
         raise RegistrationProtocolError("$.base_url", f"{error}") from error

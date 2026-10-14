@@ -90,7 +90,7 @@ def test_creates_validates_and_atomically_promotes_registration_pki(
     ca_pem, certificate_pem = issue_certificates(csr)
     store.save_issued(ca_pem, certificate_pem)
 
-    context = store.client_context()
+    context = store.create_client_context()
     assert context.verify_mode is ssl.CERT_REQUIRED
 
     store.finalize()
@@ -198,7 +198,7 @@ async def test_registration_service_uses_wrapped_config_and_finalizes(
         def save_issued(self, ca_pem: str, certificate_pem: str) -> None:
             self.saved = (ca_pem, certificate_pem)
 
-        def client_context(self) -> ssl.SSLContext:
+        def create_client_context(self) -> ssl.SSLContext:
             return ssl.create_default_context()
 
         def finalize(self) -> None:

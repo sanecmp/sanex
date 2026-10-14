@@ -47,7 +47,7 @@ class PkiPaths:
     def key(self) -> Path:
         return self.root / "client.key"
 
-    def client_context(self) -> ssl.SSLContext:
+    def create_client_context(self) -> ssl.SSLContext:
         """Build an mTLS context pinned to the registered sanea CA."""
         try:
             context = ssl.create_default_context(
@@ -140,7 +140,7 @@ class RegistrationPkiStore:
             certificate.public_bytes(serialization.Encoding.PEM),
         )
 
-    def client_context(self) -> ssl.SSLContext:
+    def create_client_context(self) -> ssl.SSLContext:
         """Return an mTLS context after revalidating pending materials."""
         private_key = self._load_private_key()
         self._validate_certificates(
@@ -148,7 +148,7 @@ class RegistrationPkiStore:
             self._read(self.pending.certificate),
             private_key,
         )
-        return self.pending.client_context()
+        return self.pending.create_client_context()
 
     def finalize(self) -> None:
         """Remove the CSR and atomically promote pending PKI to permanent PKI."""
@@ -156,7 +156,7 @@ class RegistrationPkiStore:
         if self.permanent_root.exists():
             raise RegistrationError("permanent PKI appeared during registration")
 
-        self.client_context()
+        self.create_client_context()
         try:
             self.csr_path.unlink()
             fsync_directory(self.pending_root)

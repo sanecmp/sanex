@@ -25,7 +25,7 @@ def test_addressed_bus_authenticates_with_unix_peer_identity(monkeypatch: pytest
     create_bus = Mock()
     monkeypatch.setattr(atspi_module, "MessageBus", create_bus)
 
-    bus = atspi_module.addressed_bus("unix:path=/test/user-bus")
+    bus = atspi_module.create_addressed_bus("unix:path=/test/user-bus")
 
     create_bus.assert_called_once()
     options = create_bus.call_args.kwargs
@@ -61,7 +61,7 @@ async def test_discovers_top_level_windows_and_reuses_bus_pid(
     )
     await client.connect()
 
-    snapshot = await client.windows()
+    snapshot = await client.read_windows()
 
     assert snapshot.windows == (
         AtspiWindow(
@@ -110,7 +110,7 @@ async def test_marks_window_that_disappears_during_snapshot_as_unavailable(
     )
     await client.connect()
 
-    snapshot = await client.windows()
+    snapshot = await client.read_windows()
 
     assert snapshot.windows == ()
     assert snapshot.unavailable_windows == (
@@ -215,7 +215,7 @@ async def test_client_requires_explicit_connection() -> None:
     )
 
     with pytest.raises(AtspiError, match="client is not connected"):
-        await client.windows()
+        await client.read_windows()
 
 
 @pytest.mark.asyncio
@@ -234,7 +234,7 @@ async def test_snapshot_does_not_wrap_unexpected_implementation_failure(
     await client.connect()
 
     with pytest.raises(RuntimeError, match="implementation bug"):
-        await client.windows()
+        await client.read_windows()
 
 
 @pytest.mark.asyncio
@@ -304,7 +304,7 @@ async def test_partial_connect_releases_both_buses(step: str, cancel: bool) -> N
     assert accessibility.disconnect_count == (1 if step in {"atspi_connect", "discovery_disconnect"} else 0)
 
     with pytest.raises(AtspiError, match="client is not connected"):
-        await client.windows()
+        await client.read_windows()
 
 
 @pytest.mark.asyncio

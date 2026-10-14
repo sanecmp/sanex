@@ -42,7 +42,7 @@ def test_invalid_snapshot_does_not_replace_current_file(
     original = encode_payload(config_payload)
     store.save(original)
 
-    with pytest.raises(ConfigError):
+    with pytest.raises(ConfigError, match=r"\$\.ident: Field required"):
         store.save(b"{}")
 
     assert path.read_bytes() == original
