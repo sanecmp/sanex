@@ -4,7 +4,6 @@ import argparse
 import asyncio
 import logging
 import os
-import signal
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -17,6 +16,7 @@ from ..model.indicator import IndicatorStatus
 from ..platform.logind import LogindClient
 from ..utils.logging import use_logging
 from ..utils.resources import close_async_resources, close_resources
+from ..utils.signals import install_stop_signals, remove_signal_handlers
 from ..version import get_installed_version
 from .about import AboutDialog
 from .client import IndicatorStatusClient
@@ -93,7 +93,9 @@ class IndicatorApplication:
     async def run(self) -> None:
         """Run the desktop item until a signal or caller requests shutdown."""
         loop = asyncio.get_running_loop()
-        installed_signals = self._install_signals(loop)
+        installed_signals = install_stop_signals(
+            loop, self.request_stop, enabled=self.install_signal_handlers,
+        )
         desktop = self.desktop
         try:
 
@@ -106,7 +108,7 @@ class IndicatorApplication:
             )
         finally:
             await close_async_resources(
-                ("remove indicator signals", lambda: self._remove_signals(loop, installed_signals)),
+                ("remove indicator signals", lambda: remove_signal_handlers(loop, installed_signals)),
                 ("close About dialog", self.about.close),
                 ("close desktop service", desktop.close),
             )
@@ -141,36 +143,6 @@ class IndicatorApplication:
         self._restart_requested = True
         self._stop_requested.set()
         return True
-
-    def _install_signals(
-        self,
-        loop: asyncio.AbstractEventLoop,
-    ) -> tuple[signal.Signals, ...]:
-
-        if not self.install_signal_handlers:
-            return ()
-
-        installed = []
-
-        for signum in (signal.SIGINT, signal.SIGTERM):
-            try:
-                loop.add_signal_handler(signum, self.request_stop)
-
-            except (NotImplementedError, RuntimeError):
-                continue
-
-            installed.append(signum)
-
-        return tuple(installed)
-
-    @staticmethod
-    def _remove_signals(
-        loop: asyncio.AbstractEventLoop,
-        installed: tuple[signal.Signals, ...],
-    ) -> None:
-
-        for signum in installed:
-            loop.remove_signal_handler(signum)
 
 
 async def create_application(

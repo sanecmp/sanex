@@ -3,7 +3,6 @@
 import asyncio
 import logging
 import os
-import signal
 import ssl
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -52,8 +51,9 @@ from ..sync.update import (
     UpdateRecovery,
     UpdateStateStore,
 )
-from .runtime import RuntimeRepository
+from ..utils.signals import install_stop_signals, remove_signal_handlers
 from ..version import get_installed_version
+from .runtime import RuntimeRepository
 from .sync import ServiceSyncState
 from .supervisor import Supervisor
 from .window_agents import WindowAgentManager
@@ -261,7 +261,9 @@ class SanexService:
     async def run(self) -> None:
         """Connect resources, run accounting walks and shut down durably."""
         loop = asyncio.get_running_loop()
-        installed_signals = self._install_signals(loop)
+        installed_signals = install_stop_signals(
+            loop, self.request_stop, enabled=self.install_signal_handlers, warning_logger=logger,
+        )
         sync_task: asyncio.Task[None] | None = None
         try:
             await self.logind.connect()
@@ -336,7 +338,7 @@ class SanexService:
                     )
 
         finally:
-            self._remove_signals(loop, installed_signals)
+            remove_signal_handlers(loop, installed_signals)
 
             if sync_task is not None:
 
@@ -506,37 +508,6 @@ class SanexService:
 
             action = "Enabled" if after else "Disabled"
             logger.info("%s limits for UID %d", action, uid)
-
-    def _install_signals(
-        self,
-        loop: asyncio.AbstractEventLoop,
-    ) -> tuple[signal.Signals, ...]:
-
-        if not self.install_signal_handlers:
-            return ()
-
-        installed = []
-
-        for signum in (signal.SIGINT, signal.SIGTERM):
-            try:
-                loop.add_signal_handler(signum, self.request_stop)
-
-            except (NotImplementedError, RuntimeError):
-                logger.warning("Unable to install handler for %s", signum.name)
-
-            else:
-                installed.append(signum)
-
-        return tuple(installed)
-
-    @staticmethod
-    def _remove_signals(
-        loop: asyncio.AbstractEventLoop,
-        installed: tuple[signal.Signals, ...],
-    ) -> None:
-
-        for signum in installed:
-            loop.remove_signal_handler(signum)
 
 
 @dataclass(slots=True)
