@@ -128,3 +128,40 @@ curl -fsSL https://raw.githubusercontent.com/sanecmp/sanex/main/install.sh \
 
 You can also update sanex through sanea's web interface. In **Computers**, enter
 the version you want in **Update sanex** and start the update.
+
+## Application identification
+
+Application names and IDs are recorded separately from raw process names,
+executables and window-owner PIDs. Recognition supports Steam's client helpers
+and game IDs, Flatpak instance descriptors (including AT-SPI proxies), desktop
+launcher hints, and absolute GJS script paths or resource URIs. Unknown
+applications keep their raw process identity; no GJS application is ignored
+solely because it uses the interpreter.
+
+An application ID identifies the application, not its launch. Separate process
+trees remain separate launches. Steam games with available SteamAppId or
+SteamGameId hints are not merged into the Steam client. A Proton compatibility
+ID alone does not identify a game: installers also use it. Game names fall back
+to their Steam IDs without network or Steam-library scans.
+
+Recognition does not add a new window source. Games without AT-SPI windows are
+still invisible. A Flatpak proxy identifies its sandbox application, not the
+individual games behind a shared proxy. Missing metadata falls back to raw
+process data; past records without identifying metadata cannot be reconstructed.
+
+### Implementation and cost
+
+`applications/common.py` defines the provider contract and shared bounded reads.
+`applications/resolver.py` receives providers and does not import their modules
+or know their environment keys. `service/applications.py` selects and wires the
+providers; adding an application handler does not require changing the base.
+
+Only observed window owners and up to 32 same-UID ancestors are inspected.
+Process identities and optional metadata, including misses, are shared within
+one snapshot. Metadata is reread in the next snapshot so exec and PID reuse do
+not leave a persistent recognition cache. Each optional file is limited to
+64 KiB; arbitrary environment values and complete command lines are not stored
+in events or logs. Desktop-name lookups use a 256-entry cache with a five-minute
+refresh, including misses, and never scan application directories. User home
+directories need not be exposed to the service for naming; absent desktop names
+fall back to IDs. Recognition starts no subprocesses and makes no network calls.

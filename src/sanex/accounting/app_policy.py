@@ -85,6 +85,7 @@ class AppPolicyEvaluator:
                     window.process.prc_name,
                     window.process.exe,
                     window.observed.title,
+                    window.application.ident if window.application else None,
                 )
             ]
             usage = quota.usage

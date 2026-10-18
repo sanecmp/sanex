@@ -49,11 +49,11 @@ class AppRuleMatcher:
             _compile_regex(rule.wnd_title, rule.wnd_title_match),
         )
 
-    def matches(self, prc_name: str, exe: str, wnd_title: str) -> bool:
+    def matches(self, prc_name: str, exe: str, wnd_title: str, app_id: str | None = None) -> bool:
         """Match all configured conditions against current window attributes."""
         rule = self.rule
 
-        if not rule.apply:
+        if not rule.apply or (rule.app_id is not None and rule.app_id != app_id):
             return False
 
         return (
@@ -111,12 +111,13 @@ def matching_app_rules(
     prc_name: str,
     exe: str,
     wnd_title: str,
+    app_id: str | None = None,
 ) -> tuple[AppRule, ...]:
     """Return every applied rule matching the same observed window."""
     return tuple(
         matcher.rule
         for matcher in matchers
-        if matcher.matches(prc_name, exe, wnd_title)
+        if matcher.matches(prc_name, exe, wnd_title, app_id)
     )
 
 

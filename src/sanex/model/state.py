@@ -4,6 +4,7 @@ from datetime import date
 from typing import Annotated, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from sanelib.protocol import ApplicationIdentity
 
 from ..exceptions import RuntimeStateError
 from .validation import (
@@ -49,6 +50,7 @@ class ProcessRun(_RuntimeModel):
     group_ident: NonEmptyString
     prc_name: NonEmptyString
     exe: NonEmptyString
+    application: ApplicationIdentity | None = None
     started: NonNegativeInt
     duration: NonNegativeInt
     reported: bool

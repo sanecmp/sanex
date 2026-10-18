@@ -54,6 +54,7 @@ from ..sync.update import (
 from ..utils.signals import install_stop_signals, remove_signal_handlers
 from ..version import get_installed_version
 from .runtime import RuntimeRepository
+from .applications import create_application_resolver
 from .sync import ServiceSyncState
 from .supervisor import Supervisor
 from .window_agents import WindowAgentManager
@@ -562,7 +563,7 @@ class SanexServiceFactory:
             boot_ident,
         )
         cycle_factory = AccountCycleFactory(
-            process_resolver=WindowProcessResolver(ProcessReader()),
+            process_resolver=WindowProcessResolver(ProcessReader(), applications=create_application_resolver()),
             terminator=logind,
             window_closer=window_agents,
             event_store=self.event_store,

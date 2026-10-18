@@ -3,7 +3,7 @@
 from typing import Any
 
 import pytest
-from sanelib.protocol import Actor, EventType, ProcessEndEvent, ProcessStartEvent
+from sanelib.protocol import Actor, ApplicationIdentity, EventType, ProcessEndEvent, ProcessStartEvent
 
 from sanex.accounting.runtime import AccountRuntime
 from sanex.model.process import ProcessIdentity
@@ -243,6 +243,56 @@ def test_pid_reuse_creates_new_window_and_process_run(
     assert len(result.started) == 1
     assert result.started[0].wnds == [43]
     assert result.started[0].duration == 0
+
+
+@pytest.mark.parametrize("identity_changed", [False, True])
+def test_recognized_run_survives_name_changes_but_not_application_identity_changes(
+    runtime_payload: dict[str, Any], identity_changed: bool,
+) -> None:
+    state = decode_runtime_state(runtime_payload)
+    previous = existing_group(runtime_payload)
+    application = ApplicationIdentity(ident="desktop:org.example.Editor", name="Editor")
+    state.prc_runs[0].application = application
+    state.prc_runs[0].group_ident = f"{previous.process.pid}:{previous.process.started}:{application.ident}"
+    state = decode_runtime_state(state.model_dump(mode="json"))
+    old_run = state.prc_runs[0]
+    replacement_application = ApplicationIdentity(
+        ident="desktop:org.example.Other" if identity_changed else application.ident,
+        name="Renamed application",
+    )
+    replacement = ProcessWindowGroup(
+        process=previous.process.model_copy(update={"prc_name": "new-helper", "exe": "/new/helper"}),
+        windows=previous.windows,
+        owners=previous.owners,
+        application=replacement_application,
+    )
+    runtime = AccountRuntime(1001, state)
+
+    result = runtime.reconcile_windows(
+        sess_ident="3", groups=(replacement,), snapshot=AtspiWindowSnapshot(),
+        timestamp=1_790_845_600, elapsed=5,
+    )
+
+    assert result.windows[0].application == replacement_application
+    assert old_run.duration == 3142
+
+    if identity_changed:
+        assert result.ended == (old_run,)
+        assert len(result.started) == 1
+        assert result.windows[0].state.ident == 43
+        assert result.started[0].application == replacement_application
+        events = runtime.create_process_events(ended=result.ended, min_duration=0, timestamp=1_790_845_600)
+        started_event = next(event for event in events if isinstance(event, ProcessStartEvent))
+        assert started_event.application == replacement_application
+        assert (started_event.prc_name, started_event.exe) == ("new-helper", "/new/helper")
+
+    else:
+        assert result.started == ()
+        assert result.ended == ()
+        assert result.windows[0].state.ident == 42
+        assert state.prc_runs == [old_run]
+        assert old_run.application == application
+        assert (old_run.prc_name, old_run.exe) == (previous.process.prc_name, previous.process.exe)
 
 
 def test_other_session_windows_and_runs_are_preserved(

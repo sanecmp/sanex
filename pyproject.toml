@@ -6,6 +6,7 @@ build-backend = "hatchling.build"
 name = "sanecmp-sanex"
 version = "0.1.0"
 description = "System service for child computer digital wellbeing"
+readme = "README.md"
 license = "BSD-3-Clause"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
@@ -48,4 +49,4 @@ workflow_github = ".github/workflows/sanex.yml"
 packages = ["src/sanex"]
 
 [tool.hatch.build.targets.sdist]
-include = ["/src/sanex", "/pyproject.toml", "/LICENSE"]
+include = ["/src/sanex", "/pyproject.toml", "/README.md", "/LICENSE"]

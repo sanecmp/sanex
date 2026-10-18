@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from sanelib.protocol import (
     Actor,
+    ApplicationIdentity,
     EndMeta,
     Event,
     EventType,
@@ -33,6 +34,7 @@ class ResolvedWindow:
     state: WindowState
     observed: AtspiWindow
     process: ProcessIdentity
+    application: ApplicationIdentity | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,6 +120,15 @@ def _reconcile_session_windows(
             key = (observed.bus, observed.path, owner.pid, owner.started)
             window = known_windows.get(key)
 
+            if window is not None:
+                previous_run = runs_by_window.get(window.ident)
+
+                previous_app_id = previous_run.application.ident if previous_run is not None and previous_run.application else None
+                current_app_id = group.application.ident if group.application else None
+
+                if previous_app_id != current_app_id:
+                    window = None
+
             if window is None:
                 state.wnd_seq += 1
                 window = WindowState(
@@ -132,7 +143,7 @@ def _reconcile_session_windows(
             group_windows.append(window)
             current_windows.append(window)
             resolved_windows.append(
-                ResolvedWindow(state=window, observed=observed, process=group.process)
+                ResolvedWindow(state=window, observed=observed, process=group.process, application=group.application)
             )
             run = runs_by_window.get(window.ident)
 
@@ -150,6 +161,7 @@ def _reconcile_session_windows(
                 group_ident=group.ident,
                 prc_name=group.process.prc_name,
                 exe=group.process.exe,
+                application=group.application,
                 started=timestamp,
                 duration=0,
                 reported=False,
@@ -157,7 +169,7 @@ def _reconcile_session_windows(
             )
             started_runs.append(run)
 
-        elif run.prc_name != group.process.prc_name or run.exe != group.process.exe:
+        elif group.application is None and (run.prc_name != group.process.prc_name or run.exe != group.process.exe):
             raise AccountingError("stable process identity changed its name or executable")
 
         run.group_ident = group.ident
@@ -257,6 +269,7 @@ def _create_process_events(
                     run_ident=event_seq,
                     prc_name=run.prc_name,
                     exe=run.exe,
+                    application=run.application,
                     meta=ProcessStartMeta(observed_via=ObservationSource.ATSPI),
                 )
             )

@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from sanelib.protocol import Account, Config, decode_config
+from sanelib.protocol import Account, ApplicationIdentity, Config, decode_config
 
 from sanex.accounting.app_policy import AppPolicyEvaluator
 from sanex.accounting.process import ResolvedWindow
@@ -49,6 +49,24 @@ def policy_context(
 def account_uid(config: Config) -> int:
     """Return the UID of the shared single-account fixture."""
     return config.accounts[0].uid
+
+
+def test_application_identity_reaches_policy_without_replacing_raw_process_fields(
+    config_payload: dict[str, Any], runtime_payload: dict[str, Any],
+) -> None:
+    rule = config_payload["accounts"][0]["limits"]["session_rules"][0]["app_rules"][0]
+    rule.update(app_id="steam:client", prc_name=None, prc_name_match=None, exe=None, exe_match=None, max_time=0)
+    config, account, state, resolver, windows = policy_context(config_payload, runtime_payload)
+    existing = windows[0]
+    application = ApplicationIdentity(ident="steam:client", name="Steam")
+    observed = ResolvedWindow(existing.state, existing.observed, existing.process, application)
+
+    decision = AppPolicyEvaluator(AccountRuntime(1001, state), resolver).evaluate(
+        account, (observed,), (), ACTIVE_TIMESTAMP, elapsed=0,
+    )
+
+    assert decision.blocked[0].window is observed
+    assert observed.process.prc_name == "yandex_browser"
 
 
 def test_matching_rule_spends_one_interval(

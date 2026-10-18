@@ -9,6 +9,15 @@ from sanex.accounting.app import AppRuleMatcher, matching_app_rules
 from tests.sanex.accounting.factories import configured_app_rule
 
 
+def test_application_id_is_an_exact_condition_combined_with_raw_conditions(config_payload: dict[str, Any]) -> None:
+    matcher = AppRuleMatcher(configured_app_rule(config_payload, app_id="steam:client"))
+
+    assert matcher.matches("yandex_browser", "/opt/yandex/browser/yandex_browser", "", "steam:client")
+    assert not matcher.matches("yandex_browser", "/opt/yandex/browser/yandex_browser", "", "steam:game:123")
+    assert not matcher.matches("yandex_browser", "/opt/yandex/browser/yandex_browser", "")
+    assert not matcher.matches("other", "/opt/yandex/browser/yandex_browser", "", "steam:client")
+
+
 def test_filled_conditions_are_combined_with_and(config_payload: dict[str, Any]) -> None:
     matcher = AppRuleMatcher(configured_app_rule(config_payload))
 

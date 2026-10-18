@@ -2,12 +2,15 @@
 
 import os
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
 from pydantic import ValidationError
+from sanelib.protocol import ApplicationIdentity
 
+from ..applications import ApplicationResolver
+from ..applications.common import ApplicationContext, ApplicationMatch
 from ..exceptions import ProcessError
 from ..model.process import ProcessIdentity
 from ..model.window import AtspiWindow
@@ -130,12 +133,14 @@ class ProcessWindowGroup:
     process: ProcessIdentity
     windows: tuple[AtspiWindow, ...]
     owners: tuple[ProcessIdentity, ...]
+    application: ApplicationIdentity | None = None
 
     @property
     def ident(self) -> str:
         """Return a stable group identity for the lifetime of the process tree."""
         process = self.process
-        return f"{process.pid}:{process.started}"
+        identity = f"{process.pid}:{process.started}"
+        return identity if self.application is None else f"{identity}:{self.application.ident}"
 
     def find_owner(self, window: AtspiWindow) -> ProcessIdentity:
         """Return the concrete process that owns one grouped window."""
@@ -150,9 +155,10 @@ class ProcessWindowGroup:
 
 @dataclass(frozen=True, slots=True)
 class WindowProcessResolver:
-    """Resolve window owners and group same-executable process trees."""
+    """Resolve window owners using an injected, application-agnostic pipeline."""
 
     reader: ProcessSource
+    applications: ApplicationResolver = field(default_factory=ApplicationResolver)
 
     def resolve(
         self,
@@ -160,38 +166,47 @@ class WindowProcessResolver:
         uid: int,
         ignored_prcs: Iterable[str] = (),
     ) -> tuple[ProcessWindowGroup, ...]:
-        """Return same-UID windows grouped by a stable application root.
+        """Return same-UID windows grouped by a stable launch root.
 
-        AT-SPI supplies only top-level window owners. When several owners are
-        descendants with the same executable, they belong to one application
-        run. This groups browser-style workers without knowing any application
-        names and keeps separately launched process trees apart. Cgroups are
-        not grouping keys or application filters: one application can span
-        several scopes or inherit the desktop service of its launcher.
+        Without configured providers, only same-executable descendants group.
+        Providers can recognize applications and select their launch roots;
+        a shared application ID never merges independent process trees.
+        Cgroups are not grouping keys or filters: an application can inherit
+        its launcher's desktop service or span several scopes.
         """
         # GNOME Shell exposes the desktop itself as an AT-SPI window. Ignore
         # the shell's process, not other applications inheriting its cgroup.
         ignored = frozenset(("gnome-shell", *ignored_prcs))
         identities: dict[int, ProcessIdentity | None] = {}
-        roots: dict[tuple[int, int], ProcessIdentity] = {}
+        context = ApplicationContext(
+            read_process=lambda pid: self._read_process(pid, identities),
+            metadata=self.applications.metadata,
+            environment_keys=self.applications.environment_keys,
+        )
+        resolved: dict[ProcessIdentity, ApplicationMatch] = {}
+        roots: dict[tuple[int, int, str], ApplicationMatch] = {}
         grouped: dict[
-            tuple[int, int],
+            tuple[int, int, str],
             list[tuple[AtspiWindow, ProcessIdentity]],
         ] = {}
 
         for window in windows:
             owner = self._read_process(window.pid, identities)
 
-            if owner is None:
+            if owner is None or owner.uid != uid:
                 continue
 
-            process = self._find_application_root(owner, identities)
+            if owner not in resolved:
+                resolved[owner] = self.applications.resolve(owner, context)
+
+            match = resolved[owner]
+            process = match.process
 
             if process.uid != uid or process.prc_name in ignored:
                 continue
 
-            key = (process.pid, process.started)
-            roots[key] = process
+            key = (process.pid, process.started, match.application.ident if match.application else "")
+            roots[key] = match
             grouped.setdefault(key, []).append((window, owner))
 
         groups = []
@@ -203,7 +218,8 @@ class WindowProcessResolver:
             )
             groups.append(
                 ProcessWindowGroup(
-                    process=roots[key],
+                    process=roots[key].process,
+                    application=roots[key].application,
                     windows=tuple(window for window, owner in members),
                     owners=tuple(owner for window, owner in members),
                 )
@@ -221,35 +237,3 @@ class WindowProcessResolver:
             identities[pid] = self.reader.read(pid)
 
         return identities[pid]
-
-    def _find_application_root(
-        self,
-        process: ProcessIdentity,
-        identities: dict[int, ProcessIdentity | None],
-    ) -> ProcessIdentity:
-        current = process
-        visited = {current.pid}
-
-        while current.parent_pid != 0:
-            parent_pid = current.parent_pid
-
-            if parent_pid in visited:
-                break
-
-            visited.add(parent_pid)
-            try:
-                parent = self._read_process(parent_pid, identities)
-
-            except ProcessError:
-                break
-
-            if (
-                parent is None
-                or parent.uid != current.uid
-                or parent.exe != current.exe
-            ):
-                break
-
-            current = parent
-
-        return current
