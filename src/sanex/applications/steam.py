@@ -9,7 +9,12 @@ from .common import ApplicationContext, ApplicationMatch
 
 
 _CLIENT_EXECUTABLES = frozenset({"steam", "steamwebhelper"})
-ENVIRONMENT_KEYS = frozenset({"SteamAppId", "SteamGameId"})
+ENVIRONMENT_KEYS = frozenset({"SteamAppId", "SteamGameId", "XDG_SESSION_ID"})
+
+
+def is_steam_client(process: ProcessIdentity) -> bool:
+    """Recognize only Steam's own client executables, not arbitrary descendants."""
+    return Path(process.exe).name in _CLIENT_EXECUTABLES
 
 
 def read_game_id(process: ProcessIdentity, context: ApplicationContext) -> str | None:
@@ -40,9 +45,10 @@ def identify_steam(process: ProcessIdentity, context: ApplicationContext) -> App
 
             root = parent
 
-        return ApplicationMatch(
-            root, ApplicationIdentity(ident=f"steam:game:{game_id}", name=f"Steam game {game_id}"), group_same_executable=False,
-        )
+        titles = context.window_titles.get(process.pid, ())
+        name = next((title.strip() for title in titles if title.strip() and len(title) <= 512
+                     and not any(ord(character) < 32 for character in title)), f"Steam game {game_id}")
+        return ApplicationMatch(root, ApplicationIdentity(ident=f"steam:game:{game_id}", name=name), group_same_executable=False)
 
     if executable not in _CLIENT_EXECUTABLES:
         return None

@@ -148,6 +148,8 @@ async def test_complete_snapshot_updates_all_counters_and_saves_periodically(
     assert third.saved
     assert len(saver.states) == 2
     assert state.sess_runs[0].duration == 3023
+    assert state.observed_at == ACTIVE_TIMESTAMP + 5
+    assert saver.states[-1][1].observed_at == ACTIVE_TIMESTAMP + 5
     assert state.prc_runs[0].duration == 3143
     assert state.occurrences[0].sessions[0].spent == 818
     assert state.occurrences[0].apps[0].spent == 924

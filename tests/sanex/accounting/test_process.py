@@ -3,7 +3,7 @@
 from typing import Any
 
 import pytest
-from sanelib.protocol import Actor, ApplicationIdentity, EventType, ProcessEndEvent, ProcessStartEvent
+from sanelib.protocol import Actor, ApplicationIdentity, EventType, ObservationSource, ProcessEndEvent, ProcessStartEvent
 
 from sanex.accounting.runtime import AccountRuntime
 from sanex.model.process import ProcessIdentity
@@ -332,6 +332,84 @@ def test_other_session_windows_and_runs_are_preserved(
     assert state.wnds == [other_window]
     assert state.prc_runs == [other_run]
     assert other_run.duration == 10
+
+
+def test_windowless_game_keeps_one_run_when_its_window_appears_and_disappears(runtime_payload: dict[str, Any]) -> None:
+    state = decode_runtime_state(runtime_payload)
+    previous = existing_group(runtime_payload)
+    state.prc_runs.clear()
+    state.wnds.clear()
+    application = ApplicationIdentity(ident="steam:game:440", name="Team Fortress 2")
+    process_group = ProcessWindowGroup(process=previous.process, application=application, windows=(), owners=())
+    runtime = AccountRuntime(1001, state)
+    timestamp = 1_790_845_600
+
+    result = runtime.reconcile_windows("3", (process_group,), AtspiWindowSnapshot(), timestamp, 0)
+    run = result.started[0]
+    start = runtime.create_process_events(result.ended, 0, timestamp)
+    assert len(start) == 1
+    assert start[0].meta.observed_via == ObservationSource.PROCESS
+    assert run.sess_ident == "3"
+    assert state.wnds == []
+
+    window = previous.windows[0].model_copy(update={"source": ObservationSource.EWMH, "bus": "ewmh", "path": "10"})
+    window_group = ProcessWindowGroup(process=previous.process, application=application, windows=(window,), owners=(previous.process,))
+    observed = runtime.reconcile_windows("3", (window_group,), AtspiWindowSnapshot(windows=(window,)), timestamp + 5, 5)
+    assert observed.started == observed.ended == ()
+    assert state.prc_runs == [run]
+    assert len(state.wnds) == 1
+
+    vanished = runtime.reconcile_windows("3", (process_group,), AtspiWindowSnapshot(), timestamp + 10, 5)
+    assert vanished.started == vanished.ended == ()
+    assert state.prc_runs == [run]
+    assert state.wnds == []
+
+    ended = runtime.reconcile_windows("3", (), AtspiWindowSnapshot(), timestamp + 15, 5)
+    events = runtime.create_process_events(ended.ended, 0, timestamp + 15)
+    assert len(events) == 1
+    assert events[0].type == EventType.PRC_END
+    assert events[0].duration == 15
+    assert events[0].run_ident == start[0].run_ident
+    assert state.prc_runs == []
+
+
+def test_unavailable_source_preserves_its_previously_observed_windows(runtime_payload: dict[str, Any]) -> None:
+    state = decode_runtime_state(runtime_payload)
+    run = state.prc_runs[0]
+    window = state.wnds[0]
+    runtime = AccountRuntime(1001, state)
+
+    result = runtime.reconcile_windows("3", (), AtspiWindowSnapshot(unavailable_sources=(ObservationSource.ATSPI,)), 1_790_845_600, 5)
+
+    assert result.ended == ()
+    assert state.prc_runs == [run]
+    assert state.wnds == [window]
+    assert result.unavailable_wnds == (window.ident,)
+
+
+@pytest.mark.parametrize(
+    ("previous_source", "replacement_source"),
+    [(ObservationSource.ATSPI, ObservationSource.EWMH), (ObservationSource.EWMH, ObservationSource.ATSPI)],
+)
+def test_replacement_window_source_does_not_preserve_a_duplicate_window(
+    runtime_payload: dict[str, Any], previous_source: ObservationSource, replacement_source: ObservationSource,
+) -> None:
+    state = decode_runtime_state(runtime_payload)
+    run = state.prc_runs[0]
+    state.wnds[0].source = previous_source
+    previous = existing_group(runtime_payload)
+    window = previous.windows[0].model_copy(update={"bus": replacement_source.value, "path": "10", "source": replacement_source})
+    group = ProcessWindowGroup(process=previous.process, windows=(window,), owners=(previous.process,))
+    snapshot = AtspiWindowSnapshot(windows=(window,), unavailable_sources=(previous_source,))
+
+    result = AccountRuntime(1001, state).reconcile_windows("3", (group,), snapshot, 1_790_845_600, 5)
+
+    assert result.started == result.ended == ()
+    assert result.unavailable_wnds == ()
+    assert state.prc_runs == [run]
+    assert run.wnds == [43]
+    assert len(state.wnds) == 1
+    assert state.wnds[0].source == replacement_source
 
 
 def test_active_run_is_reported_at_exact_duration_threshold(

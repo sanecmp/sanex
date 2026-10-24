@@ -2,16 +2,22 @@
 
 import asyncio
 import ctypes
+import logging
 import os
+import pwd
 import socket
+from pathlib import Path
 
 from ..exceptions import WindowAgentError
 from ..platform.atspi import AtspiClient, create_addressed_bus
+from ..platform.desktop_windows import DesktopWindowClient
+from ..platform.session_environment import read_session_environment
 from ..platform.window_agent import WindowAgentServer
 from ..utils.resources import close_async_resources, close_resources
 
 
 _PR_SET_DUMPABLE = 4
+logger = logging.getLogger(__name__)
 
 
 async def run_agent(fd: int, uid: int, sess_ident: str) -> None:
@@ -26,11 +32,18 @@ async def run_agent(fd: int, uid: int, sess_ident: str) -> None:
         channel.setblocking(False)
         reader, writer = await asyncio.open_connection(sock=channel)
         user_bus_address = f"unix:path=/run/user/{uid}/bus"
-        client = AtspiClient(session_bus_factory=lambda: create_addressed_bus(user_bus_address))
+        client = DesktopWindowClient(AtspiClient(session_bus_factory=lambda: create_addressed_bus(user_bus_address)))
 
         try:
             os.seteuid(uid)
-            await client.connect()
+            try:
+                environment = await read_session_environment(user_bus_address)
+
+            except WindowAgentError:
+                logger.warning("Session display environment is unavailable; using accessibility only")
+                environment = {}
+
+            await client.connect(environment, Path(pwd.getpwuid(uid).pw_dir))
 
         finally:
             close_resources(("restore root EUID", lambda: os.seteuid(0)))

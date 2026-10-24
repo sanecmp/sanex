@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Protocol
 
 from pydantic import ValidationError
-from sanelib.protocol import ApplicationIdentity
+from sanelib.protocol import ApplicationIdentity, ObservationSource
 
 from ..applications import ApplicationResolver
 from ..applications.common import ApplicationContext, ApplicationMatch
@@ -21,6 +21,15 @@ class ProcessReader:
     """Read stable process identity fields from procfs."""
 
     proc_root: Path = Path("/proc")
+
+    def list_pids(self) -> tuple[int, ...]:
+        """Enumerate PIDs only when an explicitly enabled observer requests it."""
+
+        try:
+            return tuple(sorted(int(entry.name) for entry in self.proc_root.iterdir() if entry.name.isascii() and entry.name.isdecimal()))
+
+        except OSError as failure:
+            raise ProcessError(0, failure) from failure
 
     def read(self, pid: int) -> ProcessIdentity | None:
         """Return one identity, or ``None`` if the process vanished or was reused."""
@@ -126,6 +135,16 @@ class ProcessSource(Protocol):
     def read(self, pid: int) -> ProcessIdentity | None: ...
 
 
+class ProcessObserver(Protocol):
+    """Optional application-specific discovery sharing the window snapshot cache."""
+
+    def observe(
+        self, uid: int, sess_ident: str, context: ApplicationContext, matches: tuple[ApplicationMatch, ...],
+    ) -> tuple[ApplicationMatch, ...]: ...
+
+    def retain_sessions(self, uid: int, sess_idents: frozenset[str]) -> None: ...
+
+
 @dataclass(frozen=True, slots=True)
 class ProcessWindowGroup:
     """Top-level windows belonging to one stable application process."""
@@ -134,6 +153,11 @@ class ProcessWindowGroup:
     windows: tuple[AtspiWindow, ...]
     owners: tuple[ProcessIdentity, ...]
     application: ApplicationIdentity | None = None
+
+    @property
+    def source(self) -> ObservationSource:
+        """Use the window source, or process lifetime for a windowless launch."""
+        return self.windows[0].source if self.windows else ObservationSource.PROCESS
 
     @property
     def ident(self) -> str:
@@ -159,12 +183,21 @@ class WindowProcessResolver:
 
     reader: ProcessSource
     applications: ApplicationResolver = field(default_factory=ApplicationResolver)
+    observer: ProcessObserver | None = None
+
+    def retain_sessions(self, uid: int, sess_idents: frozenset[str]) -> None:
+        """Discard optional discovery state when accounts or sessions stop being observed."""
+
+        if self.observer is not None:
+            self.observer.retain_sessions(uid, sess_idents)
 
     def resolve(
         self,
         windows: Iterable[AtspiWindow],
         uid: int,
         ignored_prcs: Iterable[str] = (),
+        *,
+        sess_ident: str = "",
     ) -> tuple[ProcessWindowGroup, ...]:
         """Return same-UID windows grouped by a stable launch root.
 
@@ -177,11 +210,13 @@ class WindowProcessResolver:
         # GNOME Shell exposes the desktop itself as an AT-SPI window. Ignore
         # the shell's process, not other applications inheriting its cgroup.
         ignored = frozenset(("gnome-shell", *ignored_prcs))
+        windows = tuple(windows)
         identities: dict[int, ProcessIdentity | None] = {}
         context = ApplicationContext(
             read_process=lambda pid: self._read_process(pid, identities),
             metadata=self.applications.metadata,
             environment_keys=self.applications.environment_keys,
+            window_titles={pid: tuple(window.title for window in windows if window.pid == pid) for pid in {window.pid for window in windows}},
         )
         resolved: dict[ProcessIdentity, ApplicationMatch] = {}
         roots: dict[tuple[int, int, str], ApplicationMatch] = {}
@@ -208,6 +243,18 @@ class WindowProcessResolver:
             key = (process.pid, process.started, match.application.ident if match.application else "")
             roots[key] = match
             grouped.setdefault(key, []).append((window, owner))
+
+        if self.observer is not None and sess_ident:
+
+            for match in self.observer.observe(uid, sess_ident, context, tuple(resolved.values())):
+                process = match.process
+
+                if process.uid != uid or process.prc_name in ignored:
+                    continue
+
+                key = (process.pid, process.started, match.application.ident if match.application else "")
+                roots.setdefault(key, match)
+                grouped.setdefault(key, [])
 
         groups = []
 

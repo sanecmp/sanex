@@ -2,8 +2,9 @@
 
 from dataclasses import dataclass
 
+from sanelib.protocol import Account, Actor, EndMeta, EventType, ProcessEndEvent, SessionEndEvent, SessionRule
+
 from ..exceptions import ServiceError
-from sanelib.protocol import Account, SessionRule
 from ..model.state import RuntimeState
 from ..storage.events import EventStore
 from ..storage.state import RuntimeStateStore
@@ -26,18 +27,19 @@ class RuntimeRepository:
             state = self._new_state(config_ident)
             changed = True
 
+        event_seq = self.event_store.recover(account.uid, state.event_seq)
+
+        if event_seq != state.event_seq:
+            state.event_seq = event_seq
+            changed = True
+
         if state.boot_ident != self.boot_ident:
+            self._finish_previous_boot(account.uid, state)
             self._reset_active_state(state)
             changed = True
 
         if state.config_ident != config_ident:
             self._apply_account_config(state, account, config_ident)
-            changed = True
-
-        event_seq = self.event_store.recover(account.uid, state.event_seq)
-
-        if event_seq != state.event_seq:
-            state.event_seq = event_seq
             changed = True
 
         if changed:
@@ -75,8 +77,39 @@ class RuntimeRepository:
             occurrences=[],
         )
 
+    def _finish_previous_boot(self, uid: int, state: RuntimeState) -> None:
+        runs = [
+            *((run, SessionEndEvent, EventType.SESSION_END) for run in state.sess_runs),
+            *((run, ProcessEndEvent, EventType.PRC_END) for run in state.prc_runs if run.reported),
+        ]
+
+        if not runs:
+            return
+
+        ended = self.event_store.find_ended_runs(uid, frozenset(run.run_ident for run, _, _ in runs))
+
+        for run, event_class, event_type in runs:
+
+            if run.run_ident in ended:
+                continue
+
+            state.event_seq += 1
+            self.event_store.append(uid, event_class(
+                seq=state.event_seq,
+                type=event_type,
+                timestamp=max(state.observed_at or 0, run.started + run.duration),
+                run_ident=run.run_ident,
+                duration=run.duration,
+                meta=EndMeta(actor=Actor.UNKNOWN),
+            ))
+
+        # Make endings durable before replacing the only persisted active runs.
+        # On an interrupted save, the next load finds these same run identifiers.
+        self.event_store.seal(uid)
+
     def _reset_active_state(self, state: RuntimeState) -> None:
         state.boot_ident = self.boot_ident
+        state.observed_at = None
         state.sess_runs = []
         state.prc_runs = []
         state.wnds = []

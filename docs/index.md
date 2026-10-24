@@ -141,13 +141,37 @@ solely because it uses the interpreter.
 An application ID identifies the application, not its launch. Separate process
 trees remain separate launches. Steam games with available SteamAppId or
 SteamGameId hints are not merged into the Steam client. A Proton compatibility
-ID alone does not identify a game: installers also use it. Game names fall back
-to their Steam IDs without network or Steam-library scans.
+ID alone does not identify a game: installers also use it. A game's window title
+provides its display name when available; otherwise it falls back to its Steam ID.
+No Steam manifests, installation files, library scans or network lookups are used.
 
-Recognition does not add a new window source. Games without AT-SPI windows are
-still invisible. A Flatpak proxy identifies its sandbox application, not the
-individual games behind a shared proxy. Missing metadata falls back to raw
-process data; past records without identifying metadata cannot be reconstructed.
+AT-SPI remains the primary window source. EWMH additionally discovers ordinary
+X11 and Xwayland windows, including games without accessible windows. It uses
+the session user's local DISPLAY and Xauthority hints from their systemd user
+manager; connection setup runs under that user's EUID. Native Wayland windows
+remain outside EWMH. Windows belonging to an already accessible PID are not
+added again. Failed sources preserve their known windows rather than ending runs.
+
+After a Steam client is observed, sanex also checks same-user processes for
+SteamAppId or SteamGameId. Window and process observations share one launch and
+one snapshot's metadata cache. Without a detected client, there is no additional
+process scan. Scans stop when the client exits; already discovered games are
+checked individually until exit. A client that starts hidden must first become
+observable, directly or as a recognized game's ancestor.
+Process-only observations account for game lifetime; they do not invent a window
+or kill a process to enforce a window rule. Normal window close actions use AT-SPI
+or EWMH, according to the window's source.
+
+A Flatpak proxy identifies its sandbox application, not the individual games
+behind a shared proxy. Missing metadata falls back to raw process data; past
+records without identifying metadata cannot be reconstructed.
+
+On a new system boot, saved session and reported application runs are completed
+with their last saved durations before their active state is cleared. End times
+use the last saved observation; if it is unavailable, start plus recorded duration
+is used as an estimate. Shutdown time is not added to usage. An interrupted
+recovery is retried without appending duplicate endings. Restarting only the
+service within the same boot preserves active runs.
 
 ### Implementation and cost
 

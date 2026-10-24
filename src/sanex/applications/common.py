@@ -123,6 +123,7 @@ class ApplicationContext:
     arguments: dict[ProcessIdentity, tuple[str, ...]] = field(default_factory=dict)
     files: dict[tuple[ProcessIdentity, str], bytes | None] = field(default_factory=dict)
     matches: dict[ProcessIdentity, ApplicationMatch] = field(default_factory=dict)
+    window_titles: dict[int, tuple[str, ...]] = field(default_factory=dict)
 
     def read_environment(self, process: ProcessIdentity) -> dict[str, str]:
         """Keep only recognition hints; do not retain arbitrary environment secrets."""

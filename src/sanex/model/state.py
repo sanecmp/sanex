@@ -4,7 +4,7 @@ from datetime import date
 from typing import Annotated, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from sanelib.protocol import ApplicationIdentity
+from sanelib.protocol import ApplicationIdentity, ObservationSource
 
 from ..exceptions import RuntimeStateError
 from .validation import (
@@ -48,6 +48,8 @@ class ProcessRun(_RuntimeModel):
 
     run_ident: NonNegativeInt | None
     group_ident: NonEmptyString
+    sess_ident: NonEmptyString | None = None
+    observed_via: ObservationSource = ObservationSource.ATSPI
     prc_name: NonEmptyString
     exe: NonEmptyString
     application: ApplicationIdentity | None = None
@@ -76,6 +78,7 @@ class WindowState(_RuntimeModel):
     path: NonEmptyString
     pid: PositiveInt
     prc_started: NonNegativeInt
+    source: ObservationSource = ObservationSource.ATSPI
 
 
 class SessionUsage(_RuntimeModel):
@@ -132,6 +135,7 @@ class RuntimeState(_RuntimeModel):
 
     config_ident: NonNegativeInt
     boot_ident: NonEmptyString
+    observed_at: NonNegativeInt | None = None
     wnd_seq: NonNegativeInt
     event_seq: NonNegativeInt
     break_till: NonNegativeInt | None

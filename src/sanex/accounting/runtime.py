@@ -129,15 +129,11 @@ class AccountRuntime:
     ) -> None:
         """Advance known runs while preserving an unavailable window snapshot."""
         require_nonnegative(elapsed, "unobserved process elapsed time")
-        window_idents = {
-            window.ident
-            for window in self.state.wnds
-            if window.sess_ident == sess_ident
-        }
+        window_idents = {window.ident for window in self.state.wnds if window.sess_ident == sess_ident}
 
         for run in self.state.prc_runs:
 
-            if any(wnd_ident in window_idents for wnd_ident in run.wnds):
+            if run.sess_ident == sess_ident or any(wnd_ident in window_idents for wnd_ident in run.wnds):
                 run.duration += elapsed
 
     def list_window_idents(self, sess_ident: str) -> tuple[int, ...]:

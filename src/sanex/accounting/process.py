@@ -10,7 +10,6 @@ from sanelib.protocol import (
     EndMeta,
     Event,
     EventType,
-    ObservationSource,
     ProcessEndEvent,
     ProcessStartEvent,
     ProcessStartMeta,
@@ -70,7 +69,17 @@ def _reconcile_session_windows(
         if window.sess_ident == sess_ident
     }
     other_windows = [window for window in state.wnds if window.sess_ident != sess_ident]
-    previous_runs, other_runs = _split_session_runs(state.prc_runs, previous_windows)
+    previous_runs = []
+    other_runs = []
+
+    for run in state.prc_runs:
+        owned = [wnd_ident in previous_windows for wnd_ident in run.wnds]
+
+        if any(owned) and not all(owned):
+            raise AccountingError("process run contains windows from multiple sessions")
+
+        (previous_runs if any(owned) or run.sess_ident == sess_ident else other_runs).append(run)
+
     previous_run_windows = {id(run): tuple(run.wnds) for run in previous_runs}
 
     for run in previous_runs:
@@ -86,6 +95,7 @@ def _reconcile_session_windows(
         for window in previous_windows.values()
         if window.bus in unavailable_buses
         or (window.bus, window.path) in unavailable_windows
+        or window.source in snapshot.unavailable_sources
     }
 
     known_windows = {
@@ -138,6 +148,7 @@ def _reconcile_session_windows(
                     path=observed.path,
                     pid=owner.pid,
                     prc_started=owner.started,
+                    source=observed.source,
                 )
 
             group_windows.append(window)
@@ -159,6 +170,8 @@ def _reconcile_session_windows(
             run = ProcessRun(
                 run_ident=None,
                 group_ident=group.ident,
+                sess_ident=sess_ident if not group.windows else None,
+                observed_via=group.source,
                 prc_name=group.process.prc_name,
                 exe=group.process.exe,
                 application=group.application,
@@ -173,8 +186,18 @@ def _reconcile_session_windows(
             raise AccountingError("stable process identity changed its name or executable")
 
         run.group_ident = group.ident
+        run.sess_ident = sess_ident if not group.windows else None
         run.wnds = sorted(window.ident for window in group_windows)
         current_runs.append(run)
+
+    observed_sources = {(window.pid, window.prc_started): window.source for window in current_windows}
+
+    # A readable replacement source supersedes inaccessible references for the same owner.
+    for ident, window in tuple(preserved_windows.items()):
+        source = observed_sources.get((window.pid, window.prc_started))
+
+        if source is not None and source != window.source:
+            del preserved_windows[ident]
 
     current_run_ids = {id(run) for run in current_runs}
 
@@ -205,24 +228,6 @@ def _reconcile_session_windows(
         started=tuple(started_runs),
         ended=ended_runs,
     )
-
-
-def _split_session_runs(
-    runs: list[ProcessRun],
-    windows: dict[int, WindowState],
-) -> tuple[list[ProcessRun], list[ProcessRun]]:
-    session_runs: list[ProcessRun] = []
-    other_runs: list[ProcessRun] = []
-
-    for run in runs:
-        owned = [wnd_ident in windows for wnd_ident in run.wnds]
-
-        if any(owned) and not all(owned):
-            raise AccountingError("process run contains windows from multiple sessions")
-
-        (session_runs if any(owned) else other_runs).append(run)
-
-    return session_runs, other_runs
 
 
 def _create_process_events(
@@ -270,7 +275,7 @@ def _create_process_events(
                     prc_name=run.prc_name,
                     exe=run.exe,
                     application=run.application,
-                    meta=ProcessStartMeta(observed_via=ObservationSource.ATSPI),
+                    meta=ProcessStartMeta(observed_via=run.observed_via),
                 )
             )
 

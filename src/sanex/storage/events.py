@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from sanelib.protocol import Event, MAX_EVENTS_PER_PACKET, MAX_EVENT_PACKET_SIZE, encode_event
+from sanelib.protocol import Event, EventType, MAX_EVENTS_PER_PACKET, MAX_EVENT_PACKET_SIZE, encode_event
 
 from ..exceptions import EventError, EventPacketError, EventSequenceError, StorageError
 from ..model.event import iterate_event_records, validate_event_packet_digest
@@ -156,6 +156,26 @@ class EventStore:
         """Return validated immutable packets waiting for synchronization."""
         self._metadata(uid)
         return self._pending_packets[uid]
+
+    def find_ended_runs(self, uid: int, run_idents: frozenset[int]) -> frozenset[int]:
+        """Find journaled endings before retrying interrupted boot recovery."""
+        self._metadata(uid)
+        ended = set()
+        paths = [*(packet.path for packet in self._pending_packets[uid]), self.open_path(uid)]
+
+        for path in paths:
+            try:
+                data = path.read_bytes()
+
+            except OSError as error:
+                raise StorageError("read", path, error) from error
+
+            for event in iterate_event_records(data, allow_empty=True):
+
+                if event.type in {EventType.SESSION_END, EventType.PRC_END} and event.run_ident in run_idents:
+                    ended.add(event.run_ident)
+
+        return frozenset(ended)
 
     def find_stored_uids(self) -> tuple[int, ...]:
         """Return UIDs with event data still waiting in the filesystem."""

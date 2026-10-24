@@ -117,6 +117,9 @@ class AccountCycle:
         observations = tuple(sorted(observations, key=lambda item: item.session.ident))
         self._validate_observations(observations)
         self._unsaved_elapsed += elapsed
+        self.process_resolver.retain_sessions(
+            self.runtime.uid, frozenset(item.session.ident for item in observations) if self.collect else frozenset(),
+        )
 
         if not self._account.collect:
             self.runtime.suspend_collection()
@@ -141,6 +144,7 @@ class AccountCycle:
         }
         session_idents = set(observations_by_ident)
         session_idents.update(window.sess_ident for window in self.runtime.state.wnds)
+        session_idents.update(run.sess_ident for run in self.runtime.state.prc_runs if run.sess_ident is not None)
         resolved_windows = []
         unavailable_wnds = []
         ended_processes = []
@@ -163,6 +167,7 @@ class AccountCycle:
                     snapshot.windows,
                     self.runtime.uid,
                     self.config.ignored_prcs,
+                    sess_ident=sess_ident,
                 )
 
             process_result = self.runtime.reconcile_windows(
@@ -187,6 +192,7 @@ class AccountCycle:
                 timestamp,
             )
         )
+        self.runtime.state.observed_at = timestamp
         self._append_events(events)
 
         decisions = tuple(
@@ -232,7 +238,7 @@ class AccountCycle:
             events.extend(enforcement_events)
 
         if not saved:
-            saved = self._save_if_due()
+            saved = self._save_if_due(force=bool(events))
 
         return AccountCycleResult(
             events=tuple(events),
@@ -270,9 +276,9 @@ class AccountCycle:
         for event in events:
             self.event_appender.append(self.runtime.uid, event)
 
-    def _save_if_due(self) -> bool:
+    def _save_if_due(self, *, force: bool = False) -> bool:
 
-        if self._saved_once and self._unsaved_elapsed < self.config.save_interval:
+        if not force and self._saved_once and self._unsaved_elapsed < self.config.save_interval:
             return False
 
         self.state_saver.save(self.runtime.uid, self.runtime.state)

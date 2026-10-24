@@ -11,7 +11,7 @@ from sanelib.protocol import DiscoveredAccount
 from ..exceptions import ServiceError
 from ..model.session import LoginSession
 from ..model.window import AtspiWindow, AtspiWindowSnapshot
-from ..platform.atspi import AtspiClient
+from ..platform.desktop_windows import DesktopWindowClient
 from ..platform.logind import LogindClient
 from ..storage.config import ConfigStore
 from ..storage.events import EventStore
@@ -144,7 +144,7 @@ class CurrentSessionLogind:
 class CurrentSessionWindows:
     """Observe the invoking session directly without a privileged child agent."""
 
-    client: AtspiClient = field(default_factory=AtspiClient)
+    client: DesktopWindowClient = field(default_factory=DesktopWindowClient)
     uid: int = field(default_factory=os.getuid)
     session_ident: str | None = None
     _connected: bool = field(default=False, init=False, repr=False)

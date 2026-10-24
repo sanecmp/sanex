@@ -58,6 +58,7 @@ from .applications import create_application_resolver
 from .sync import ServiceSyncState
 from .supervisor import Supervisor
 from .window_agents import WindowAgentManager
+from .steam_observation import SteamProcessObserver
 
 
 DEFAULT_BOOT_IDENT_PATH = Path("/proc/sys/kernel/random/boot_id")
@@ -562,8 +563,11 @@ class SanexServiceFactory:
             self.event_store,
             boot_ident,
         )
+        process_reader = ProcessReader()
         cycle_factory = AccountCycleFactory(
-            process_resolver=WindowProcessResolver(ProcessReader(), applications=create_application_resolver()),
+            process_resolver=WindowProcessResolver(
+                process_reader, applications=create_application_resolver(), observer=SteamProcessObserver(process_reader.list_pids),
+            ),
             terminator=logind,
             window_closer=window_agents,
             event_store=self.event_store,

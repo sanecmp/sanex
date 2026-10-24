@@ -30,6 +30,8 @@ async def agent_boundaries(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     monkeypatch.setattr(agent_module, "socket", SimpleNamespace(socket=lambda **kwargs: channel))
     monkeypatch.setattr(agent_module.asyncio, "open_connection", AsyncMock(return_value=(reader, writer)))
     monkeypatch.setattr(agent_module, "create_addressed_bus", lambda address: discovery)
+    monkeypatch.setattr(agent_module, "read_session_environment", AsyncMock(return_value={}))
+    monkeypatch.setattr(agent_module.pwd, "getpwuid", lambda uid: SimpleNamespace(pw_dir="/synthetic/home"))
     monkeypatch.setattr(
         agent_module, "AtspiClient",
         lambda **kwargs: AtspiClient(atspi_bus_factory=lambda address: accessibility, **kwargs),

@@ -2,12 +2,14 @@
 
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
-from sanelib.protocol import decode_config
+import pytest
+from sanelib.protocol import Actor, Event, EventType, decode_config, iterate_event_records
 
 from sanex.model.state import decode_runtime_state
 from sanex.service.runtime import RuntimeRepository
-from sanex.storage.events import EventStore
+from sanex.storage.events import EventPacket, EventStore
 from sanex.storage.state import RuntimeStateStore
 
 
@@ -92,3 +94,113 @@ def test_removing_limits_keeps_dormant_budget_history(
     assert migrated.occurrences[0].sessions[0].spent == 812
     assert migrated.occurrences[0].apps[0].spent == 918
     assert migrated.occurrences[0].apps[0].active_wnds == []
+
+
+def test_new_boot_reports_saved_sessions_and_applications_before_clearing_them(
+    tmp_path: Path, config_payload: dict[str, Any], runtime_payload: dict[str, Any],
+) -> None:
+    config = decode_config(config_payload)
+    state = decode_runtime_state(runtime_payload)
+    state.observed_at = 1_790_850_000
+    runtimes = RuntimeRepository(RuntimeStateStore(tmp_path), EventStore(tmp_path), "synthetic-next-boot")
+    runtimes.state_store.save(1001, state)
+
+    restored = runtimes.load(config.accounts[0], config.ident)
+    endings = tuple(
+        event
+        for packet in runtimes.event_store.pending(1001)
+        for event in iterate_event_records(packet.path.read_bytes())
+    )
+
+    assert [(event.type, event.run_ident, event.duration) for event in endings] == [
+        (EventType.SESSION_END, 120, 3017), (EventType.PRC_END, 121, 3137),
+    ]
+    assert all(event.timestamp == state.observed_at and event.meta.actor is Actor.UNKNOWN for event in endings)
+    assert restored.event_seq == 143
+    assert restored.boot_ident == "synthetic-next-boot"
+    assert restored.observed_at is None
+    assert restored.sess_runs == restored.prc_runs == restored.wnds == []
+    assert not restored.occurrences[0].sessions[0].active
+    assert restored.occurrences[0].sessions[0].spent == 812
+    assert runtimes.state_store.load(1001) == restored
+
+
+def test_same_boot_preserves_runs_and_does_not_synthesize_endings(
+    tmp_path: Path, config_payload: dict[str, Any], runtime_payload: dict[str, Any],
+) -> None:
+    state = decode_runtime_state(runtime_payload)
+    config = decode_config(config_payload)
+    runtimes = RuntimeRepository(RuntimeStateStore(tmp_path), EventStore(tmp_path), state.boot_ident)
+    runtimes.state_store.save(1001, state)
+
+    restored = runtimes.load(config.accounts[0], config.ident)
+
+    assert restored == state
+    assert runtimes.event_store.pending(1001) == ()
+    assert runtimes.event_store.open_path(1001).read_bytes() == b""
+
+
+def test_boot_recovery_retries_failed_state_save_without_duplicate_endings(
+    tmp_path: Path, config_payload: dict[str, Any], runtime_payload: dict[str, Any],
+) -> None:
+    config = decode_config(config_payload)
+    state = decode_runtime_state(runtime_payload)
+    state.prc_runs[0].reported = False
+    state.prc_runs[0].run_ident = None
+    runtimes = RuntimeRepository(RuntimeStateStore(tmp_path), EventStore(tmp_path), "synthetic-next-boot")
+    runtimes.state_store.save(1001, state)
+
+    with patch.object(RuntimeStateStore, "save", side_effect=OSError("synthetic save failure")):
+
+        with pytest.raises(OSError, match="synthetic save failure"):
+            runtimes.load(config.accounts[0], config.ident)
+
+    restarted = RuntimeRepository(RuntimeStateStore(tmp_path), EventStore(tmp_path), "synthetic-next-boot")
+    restored = restarted.load(config.accounts[0], config.ident)
+    endings = tuple(
+        event
+        for packet in restarted.event_store.pending(1001)
+        for event in iterate_event_records(packet.path.read_bytes())
+    )
+
+    assert len(endings) == 1
+    assert endings[0].type is EventType.SESSION_END
+    assert endings[0].timestamp == state.sess_runs[0].started + state.sess_runs[0].duration
+    assert restored.sess_runs == restored.prc_runs == []
+    assert restored.event_seq == endings[0].seq
+
+
+def test_boot_recovery_retries_an_interrupted_append_without_losing_runs(
+    tmp_path: Path, config_payload: dict[str, Any], runtime_payload: dict[str, Any],
+) -> None:
+    config = decode_config(config_payload)
+    state = decode_runtime_state(runtime_payload)
+    runtimes = RuntimeRepository(RuntimeStateStore(tmp_path), EventStore(tmp_path), "synthetic-next-boot")
+    runtimes.state_store.save(1001, state)
+    append = EventStore.append
+
+    def append_or_fail(store: EventStore, uid: int, event: Event) -> EventPacket | None:
+
+        if event.type is EventType.PRC_END:
+            raise OSError("synthetic append failure")
+
+        return append(store, uid, event)
+
+    with patch.object(EventStore, "append", append_or_fail):
+
+        with pytest.raises(OSError, match="synthetic append failure"):
+            runtimes.load(config.accounts[0], config.ident)
+
+    restarted = RuntimeRepository(RuntimeStateStore(tmp_path), EventStore(tmp_path), "synthetic-next-boot")
+    restored = restarted.load(config.accounts[0], config.ident)
+    endings = tuple(
+        event
+        for packet in restarted.event_store.pending(1001)
+        for event in iterate_event_records(packet.path.read_bytes())
+    )
+
+    assert [(event.type, event.run_ident) for event in endings] == [
+        (EventType.SESSION_END, 120), (EventType.PRC_END, 121),
+    ]
+    assert restored.event_seq == 143
+    assert restored.sess_runs == restored.prc_runs == []

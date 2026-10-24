@@ -136,6 +136,10 @@ class ProcessError(SaneaException):
         super().__init__(f"process {pid} inspection failed: {cause}")
 
 
+class X11Error(SaneaException):
+    """A local X11 connection or EWMH operation failed."""
+
+
 class StorageError(SaneaException):
     """A persistent storage operation failed."""
 
