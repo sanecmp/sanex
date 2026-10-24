@@ -23,7 +23,7 @@ from ..indicator.server import (
 from ..indicator.status import IndicatorStatusBuilder
 from ..model.config import parse_config
 from ..model.indicator import IndicatorStatus
-from ..model.session import LoginSession, SessionState
+from ..model.session import LoginSession
 from ..model.state import RuntimeState
 from ..platform.accounts import AccountDiscovery
 from ..platform.logind import LogindClient
@@ -484,7 +484,7 @@ class SanexService:
         self._indicator_sessions = frozenset(
             (session.uid, session.ident)
             for session in result.sessions
-            if session.state is not SessionState.CLOSING
+            if session.is_ready()
         )
         indicator_server = self.indicator_server
 

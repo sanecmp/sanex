@@ -31,9 +31,10 @@ class FakeWindowSource:
     def __init__(self, error_ident: str | None = None) -> None:
         self.error_ident = error_ident
         self.calls: list[str] = []
+        self.reconciled: list[tuple[LoginSession, ...]] = []
 
     async def reconcile(self, sessions: tuple[LoginSession, ...]) -> None:
-        return None
+        self.reconciled.append(sessions)
 
     async def read_windows(self, session: LoginSession) -> AtspiWindowSnapshot:
         self.calls.append(session.ident)
@@ -141,6 +142,47 @@ async def test_walk_uses_one_session_snapshot_and_routes_observations_by_uid(
     assert first.calls[0][0][0].snapshot is not None
     assert first.calls[0][3]
     assert second.calls[0][0] == ()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("state", "observed_idents"),
+    [
+        (SessionState.OPENING, ("4",)),
+        (SessionState.ONLINE, ("3", "4")),
+        (SessionState.ACTIVE, ("3", "4")),
+        (SessionState.CLOSING, ("4",)),
+    ],
+)
+async def test_walk_accounts_all_sessions_but_observes_only_ready_ones(
+    runtime_payload: dict[str, Any], state: SessionState, observed_idents: tuple[str, ...],
+) -> None:
+    sessions = (
+        login_session(1001, "3").model_copy(update={"state": state, "active": state is SessionState.ACTIVE}),
+        login_session(1001, "4").model_copy(update={"state": SessionState.ONLINE, "active": False}),
+    )
+    cycle = fake_cycle(runtime_payload, 1001)
+    windows = FakeWindowSource()
+    supervisor = Supervisor(
+        session_source=FakeSessionSource(sessions),
+        window_source=windows,
+        cycles={1001: cycle},
+        clock=clock_with_elapsed(1),
+        wall_clock=lambda: WALL_TIMESTAMP,
+    )
+
+    result = await supervisor.walk()
+
+    assert result.accounts[0].error is None
+    assert result.sessions == sessions
+    assert tuple(windows.calls) == observed_idents
+    assert tuple(session.ident for session in windows.reconciled[0]) == observed_idents
+    observations = cycle.calls[0][0]
+    assert tuple(observation.session for observation in observations) == sessions
+    assert all(
+        (observation.snapshot is not None) == (observation.session.ident in observed_idents)
+        for observation in observations
+    )
 
 
 @pytest.mark.asyncio

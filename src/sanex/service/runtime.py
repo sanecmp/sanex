@@ -2,10 +2,12 @@
 
 from dataclasses import dataclass
 
-from sanelib.protocol import Account, Actor, EndMeta, EventType, ProcessEndEvent, SessionEndEvent, SessionRule
+from sanelib.protocol import (
+    Account, Actor, EmptyMeta, EndMeta, EventType, ProcessEndEvent, ProcessUpdateEvent, SessionEndEvent, SessionRule,
+)
 
 from ..exceptions import ServiceError
-from ..model.state import RuntimeState
+from ..model.state import ProcessRun, RuntimeState
 from ..storage.events import EventStore
 from ..storage.state import RuntimeStateStore
 
@@ -93,11 +95,25 @@ class RuntimeRepository:
             if run.run_ident in ended:
                 continue
 
+            timestamp = max(state.observed_at or 0, run.started + run.duration)
+
+            if isinstance(run, ProcessRun) and run.application_update_pending:
+                state.event_seq += 1
+                self.event_store.append(uid, ProcessUpdateEvent(
+                    seq=state.event_seq,
+                    type=EventType.PRC_UPDATE,
+                    timestamp=timestamp,
+                    run_ident=run.run_ident,
+                    application=run.application,
+                    meta=EmptyMeta(),
+                ))
+                run.application_update_pending = False
+
             state.event_seq += 1
             self.event_store.append(uid, event_class(
                 seq=state.event_seq,
                 type=event_type,
-                timestamp=max(state.observed_at or 0, run.started + run.duration),
+                timestamp=timestamp,
                 run_ident=run.run_ident,
                 duration=run.duration,
                 meta=EndMeta(actor=Actor.UNKNOWN),

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from sanelib.protocol import Config, decode_config
+from sanelib.protocol import Config, EventType, decode_config, iterate_event_records
 
 from sanex.accounting.clock import ActiveTimeClock
 from sanex.accounting.runtime import AccountRuntime
@@ -202,7 +202,7 @@ def indicator_session(uid: int = 1001, state: SessionState = SessionState.ACTIVE
     """Build a synthetic graphical session without system discovery."""
     return LoginSession(
         ident="3", uid=uid, login=f"user-{uid}", path="/session/3", started=1_790_956_700,
-        type=SessionType.WAYLAND, state=state, active=True, idle=False, locked=False,
+        type=SessionType.WAYLAND, state=state, active=state is SessionState.ACTIVE, idle=False, locked=False,
     )
 
 
@@ -369,6 +369,60 @@ async def test_service_starts_walks_saves_and_closes_resources(
     assert indicator.closed
 
 
+@pytest.mark.asyncio
+async def test_preparing_session_keeps_one_accounted_run_until_it_disappears(
+    tmp_path: Path, config_payload: dict[str, Any],
+) -> None:
+    factory = service_factory(tmp_path, config_payload, "boot-current")
+    factory.enforcement_enabled = False
+    logind = FakeLogind()
+    agents = FakeWindowAgents()
+    factory.logind_factory = lambda: logind
+    factory.window_agents_factory = lambda path: agents
+    service = factory.create()
+    timestamps = iter(range(1_790_956_800, 1_790_956_825, 5))
+    service.supervisor.wall_clock = timestamps.__next__
+    opening = indicator_session(state=SessionState.OPENING).model_copy(update={"started": 1_790_956_800})
+    logind.snapshot = (opening,)
+
+    first = await service.supervisor.walk(existing=True, elapsed=0)
+
+    assert first.accounts[0].error is None
+    assert first.accounts[0].result is not None
+    assert [event.type for event in first.accounts[0].result.events] == [EventType.SESSION_START]
+    runtime = service.runtimes[1001]
+    run_ident = runtime.state.sess_runs[0].run_ident
+
+    for state in (SessionState.ONLINE, SessionState.ACTIVE, SessionState.CLOSING):
+        logind.snapshot = (opening.model_copy(update={"state": state, "active": state is SessionState.ACTIVE}),)
+
+        result = await service.supervisor.walk(elapsed=5)
+
+        assert result.accounts[0].error is None
+        assert result.accounts[0].result is not None
+        assert result.accounts[0].result.events == ()
+        assert len(runtime.state.sess_runs) == 1
+        assert runtime.state.sess_runs[0].run_ident == run_ident
+
+    assert runtime.state.sess_runs[0].duration == 15
+    logind.snapshot = ()
+
+    last = await service.supervisor.walk(elapsed=5)
+
+    assert last.accounts[0].error is None
+    events = tuple(iterate_event_records(factory.event_store.open_path(1001).read_bytes()))
+    assert [event.type for event in events] == [EventType.SESSION_START, EventType.SESSION_END]
+    assert [event.run_ident for event in events] == [run_ident, run_ident]
+    assert events[0].timestamp == opening.started
+    assert events[1].timestamp == opening.started + 20
+    assert events[1].duration == 20
+    assert runtime.state.sess_runs == []
+    assert factory.state_store.load(1001) == runtime.state
+    assert [tuple(session.state for session in snapshot) for snapshot in agents.observed] == [
+        (), (SessionState.ONLINE,), (SessionState.ACTIVE,), (), (),
+    ]
+
+
 @pytest.mark.parametrize("configured_uid", [1001, 1002], ids=["collection-disabled", "unconfigured-account"])
 @pytest.mark.asyncio
 async def test_indicator_is_available_without_collecting_account_data(
@@ -407,7 +461,15 @@ async def test_indicator_is_available_without_collecting_account_data(
     assert not service.authorize_indicator(1001, "3")
 
 
-@pytest.mark.parametrize("new_snapshot", [(), (indicator_session(state=SessionState.CLOSING),), (indicator_session(uid=1002),)])
+@pytest.mark.parametrize(
+    "new_snapshot",
+    [
+        (),
+        (indicator_session(state=SessionState.OPENING),),
+        (indicator_session(state=SessionState.CLOSING),),
+        (indicator_session(uid=1002),),
+    ],
+)
 @pytest.mark.asyncio
 async def test_indicator_revokes_access_when_session_ends_or_changes_owner(
     tmp_path: Path, config_payload: dict[str, Any], new_snapshot: tuple[LoginSession, ...],

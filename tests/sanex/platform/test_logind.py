@@ -35,9 +35,11 @@ def session_row(sample: dict[str, Any]) -> list[object]:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("state", list(SessionState))
 async def test_snapshot_keeps_normal_graphical_sessions(
-    session_payload: list[dict[str, Any]],
+    session_payload: list[dict[str, Any]], state: SessionState,
 ) -> None:
+    session_payload[0].update(state=state.value, active=state is SessionState.ACTIVE)
     rows = [session_row(sample) for sample in session_payload]
     bus = FakeBus(
         [
@@ -58,8 +60,8 @@ async def test_snapshot_keeps_normal_graphical_sessions(
             path="/org/freedesktop/login1/session/_32",
             started=1790910138,
             type=SessionType.WAYLAND,
-            state=SessionState.ACTIVE,
-            active=True,
+            state=state,
+            active=state is SessionState.ACTIVE,
             idle=False,
             locked=False,
         ),
@@ -138,8 +140,8 @@ async def test_finds_own_graphical_session_for_process_outside_session(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("state", ["active", "closing"])
-async def test_process_session_lookup_rejects_ambiguous_or_closing_sessions(
+@pytest.mark.parametrize("state", ["active", "opening", "closing"])
+async def test_process_session_lookup_rejects_ambiguous_or_unready_sessions(
     session_payload: list[dict[str, Any]], state: str,
 ) -> None:
     session_payload[0]["state"] = state
@@ -157,6 +159,27 @@ async def test_process_session_lookup_rejects_ambiguous_or_closing_sessions(
         with pytest.raises(LogindError, match="No unique graphical session for UID 1001"):
             await client.get_session_ident(1234, uid=1001)
 
+    assert not bus.connected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("state", ["opening", "closing"])
+async def test_process_session_lookup_ignores_transitional_siblings(
+    session_payload: list[dict[str, Any]], state: str,
+) -> None:
+    session_payload[0].update(state=state, active=False)
+    session_payload[1]["uid"] = 1001
+    bus = FakeBus([
+        dbus_error("org.freedesktop.login1.NoSessionForPID", "PID does not belong to any known session"),
+        dbus_reply([[session_row(sample) for sample in session_payload]]),
+        *(dbus_reply([session_properties(sample)]) for sample in session_payload),
+    ])
+    client = LogindClient(bus_factory=lambda: bus)
+
+    async with client:
+        ident = await client.get_session_ident(1234, uid=1001)
+
+    assert ident == "3"
     assert not bus.connected
 
 

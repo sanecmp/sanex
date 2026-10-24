@@ -120,6 +120,25 @@ def test_steam_window_and_process_sources_share_one_launch_and_use_the_window_ti
     assert groups[1].application.ident == "steam:game:440"
 
 
+@pytest.mark.parametrize("reverse_windows", [False, True])
+def test_empty_worker_window_cannot_replace_a_game_title_with_its_fallback(
+    process_create: Callable[..., ProcessIdentity], window_create: Callable[..., AtspiWindow],
+    resolver: WindowProcessResolver, reverse_windows: bool,
+) -> None:
+    process_create(environment={"SteamAppId": "440"})
+    process_create(pid=110, parent_pid=100, environment={"SteamAppId": "440"})
+    windows = (
+        window_create().model_copy(update={"title": "Team Fortress 2"}),
+        window_create(pid=110).model_copy(update={"title": ""}),
+    )
+
+    groups = resolver.resolve(reversed(windows) if reverse_windows else windows, 1001)
+
+    assert len(groups) == 1
+    assert groups[0].application.name == "Team Fortress 2"
+    assert groups[0].fallback_name == "Steam game 440"
+
+
 def test_reused_client_pid_does_not_keep_steam_process_scanning_enabled(
     tmp_path: Path, process_create: Callable[..., ProcessIdentity], window_create: Callable[..., AtspiWindow],
     resolver: WindowProcessResolver,

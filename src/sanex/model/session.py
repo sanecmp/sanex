@@ -17,6 +17,7 @@ class SessionType(StrEnum):
 class SessionState(StrEnum):
     """States reported for a logind session."""
 
+    OPENING = "opening"
     ONLINE = "online"
     ACTIVE = "active"
     CLOSING = "closing"
@@ -37,3 +38,7 @@ class LoginSession(BaseModel):
     active: bool
     idle: bool
     locked: bool
+
+    def is_ready(self) -> bool:
+        """Whether setup has finished and shutdown has not started, even if inactive."""
+        return self.state in (SessionState.ONLINE, SessionState.ACTIVE)

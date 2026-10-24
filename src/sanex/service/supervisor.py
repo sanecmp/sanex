@@ -142,14 +142,18 @@ class Supervisor:
             for session in sessions
             if session.uid in self.cycles and self.cycles[session.uid].collect
         )
-        await self.window_source.reconcile(relevant)
+        ready = tuple(session for session in relevant if session.is_ready())
+        await self.window_source.reconcile(ready)
         snapshots = await asyncio.gather(
-            *(self.window_source.read_windows(session) for session in relevant),
+            *(self.window_source.read_windows(session) for session in ready),
             return_exceptions=True,
         )
+        snapshots_by_ident = dict(zip((session.ident for session in ready), snapshots, strict=True))
         observations: list[SessionObservation] = []
 
-        for session, snapshot in zip(relevant, snapshots, strict=True):
+        for session in relevant:
+            # Transitional sessions remain present for accounting, without starting observers.
+            snapshot = snapshots_by_ident.get(session.ident)
 
             if isinstance(snapshot, asyncio.CancelledError):
                 raise snapshot

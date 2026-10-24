@@ -7,12 +7,14 @@ from typing import TYPE_CHECKING
 from sanelib.protocol import (
     Actor,
     ApplicationIdentity,
+    EmptyMeta,
     EndMeta,
     Event,
     EventType,
     ProcessEndEvent,
     ProcessStartEvent,
     ProcessStartMeta,
+    ProcessUpdateEvent,
 )
 
 from ..exceptions import AccountingError
@@ -185,6 +187,16 @@ def _reconcile_session_windows(
         elif group.application is None and (run.prc_name != group.process.prc_name or run.exe != group.process.exe):
             raise AccountingError("stable process identity changed its name or executable")
 
+        if (
+            run.application is not None
+            and group.application is not None
+            and run.application.ident == group.application.ident
+            and run.application.name == group.fallback_name
+            and group.application.name != group.fallback_name
+        ):
+            run.application = group.application
+            run.application_update_pending = run.reported
+
         run.group_ident = group.ident
         run.sess_ident = sess_ident if not group.windows else None
         run.wnds = sorted(window.ident for window in group_windows)
@@ -278,6 +290,23 @@ def _create_process_events(
                     meta=ProcessStartMeta(observed_via=run.observed_via),
                 )
             )
+
+        if run.application_update_pending:
+
+            if run.run_ident is None or run.application is None:
+                raise AccountingError("pending application update has no reported application")
+
+            events.append(
+                ProcessUpdateEvent(
+                    seq=runtime.next_event_seq(),
+                    type=EventType.PRC_UPDATE,
+                    timestamp=timestamp,
+                    run_ident=run.run_ident,
+                    application=run.application,
+                    meta=EmptyMeta(),
+                )
+            )
+            run.application_update_pending = False
 
         if identity in ended_ids and run.reported:
 

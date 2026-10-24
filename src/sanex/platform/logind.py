@@ -206,7 +206,7 @@ class LogindClient:
                 sessions = [
                     session
                     for session in await self.read_sessions()
-                    if session.uid == uid and session.state is not SessionState.CLOSING
+                    if session.uid == uid and session.is_ready()
                 ]
 
                 if len(sessions) != 1:

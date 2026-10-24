@@ -78,6 +78,7 @@ class ApplicationMatch:
     process: ProcessIdentity
     application: ApplicationIdentity | None = None
     group_same_executable: bool = True
+    fallback_name: str | None = None
 
     @property
     def app_id(self) -> str | None:

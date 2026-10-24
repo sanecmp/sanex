@@ -8,7 +8,18 @@ from pydantic import ValidationError
 from sanex.model.session import LoginSession, SessionState, SessionType
 
 
-def test_login_session_is_strict_typed_and_frozen(session_payload: list[dict[str, Any]]) -> None:
+@pytest.mark.parametrize(
+    ("state", "ready"),
+    [
+        (SessionState.OPENING, False),
+        (SessionState.ONLINE, True),
+        (SessionState.ACTIVE, True),
+        (SessionState.CLOSING, False),
+    ],
+)
+def test_login_session_is_typed_frozen_and_reports_readiness(
+    session_payload: list[dict[str, Any]], state: SessionState, ready: bool,
+) -> None:
     sample = session_payload[0]
 
     session = LoginSession(
@@ -18,14 +29,15 @@ def test_login_session_is_strict_typed_and_frozen(session_payload: list[dict[str
         path=sample["path"],
         started=sample["timestamp_us"] // 1_000_000,
         type=SessionType(sample["type"]),
-        state=SessionState(sample["state"]),
-        active=sample["active"],
+        state=state,
+        active=state is SessionState.ACTIVE,
         idle=sample["idle"],
         locked=sample["locked"],
     )
 
     assert session.type is SessionType.WAYLAND
-    assert session.state is SessionState.ACTIVE
+    assert session.state is state
+    assert session.is_ready() is ready
 
     with pytest.raises(ValidationError, match="Instance is frozen"):
         session.active = False

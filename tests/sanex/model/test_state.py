@@ -80,6 +80,17 @@ def test_active_application_windows_must_be_counted(runtime_payload: dict[str, A
     )
 
 
+@pytest.mark.parametrize("reported", [False, True])
+def test_pending_name_update_requires_a_reported_application(runtime_payload: dict[str, Any], reported: bool) -> None:
+    run = runtime_payload["prc_runs"][0]
+    run.update(reported=reported, run_ident=121 if reported else None, application_update_pending=True)
+
+    if not reported:
+        run["application"] = {"ident": "steam:game:440", "name": "Team Fortress 2"}
+
+    assert_invalid(runtime_payload, "pending application update requires a reported application", "$.prc_runs[0]")
+
+
 @pytest.mark.parametrize(
     ("field", "value", "message", "path"),
     [

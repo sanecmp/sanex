@@ -46,9 +46,13 @@ def identify_steam(process: ProcessIdentity, context: ApplicationContext) -> App
             root = parent
 
         titles = context.window_titles.get(process.pid, ())
+        fallback_name = f"Steam game {game_id}"
         name = next((title.strip() for title in titles if title.strip() and len(title) <= 512
-                     and not any(ord(character) < 32 for character in title)), f"Steam game {game_id}")
-        return ApplicationMatch(root, ApplicationIdentity(ident=f"steam:game:{game_id}", name=name), group_same_executable=False)
+                     and not any(ord(character) < 32 for character in title)), fallback_name)
+        return ApplicationMatch(
+            root, ApplicationIdentity(ident=f"steam:game:{game_id}", name=name),
+            group_same_executable=False, fallback_name=fallback_name,
+        )
 
     if executable not in _CLIENT_EXECUTABLES:
         return None

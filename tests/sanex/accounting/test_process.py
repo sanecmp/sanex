@@ -1,9 +1,12 @@
 """Tests for reconciling AT-SPI windows with mutable runtime state."""
 
+from pathlib import Path
 from typing import Any
 
 import pytest
-from sanelib.protocol import Actor, ApplicationIdentity, EventType, ObservationSource, ProcessEndEvent, ProcessStartEvent
+from sanelib.protocol import (
+    Actor, ApplicationIdentity, EventType, ObservationSource, ProcessEndEvent, ProcessStartEvent, ProcessUpdateEvent,
+)
 
 from sanex.accounting.runtime import AccountRuntime
 from sanex.model.process import ProcessIdentity
@@ -15,6 +18,7 @@ from sanex.model.window import (
     WindowRole,
 )
 from sanex.platform.process import ProcessWindowGroup
+from sanex.storage.state import RuntimeStateStore
 
 
 def existing_group(runtime_payload: dict[str, Any], extra_window: bool = False) -> ProcessWindowGroup:
@@ -334,43 +338,89 @@ def test_other_session_windows_and_runs_are_preserved(
     assert other_run.duration == 10
 
 
-def test_windowless_game_keeps_one_run_when_its_window_appears_and_disappears(runtime_payload: dict[str, Any]) -> None:
+@pytest.mark.parametrize("already_reported", [False, True])
+@pytest.mark.parametrize("source", [ObservationSource.ATSPI, ObservationSource.EWMH])
+def test_windowless_game_improves_its_name_without_restarting_or_losing_the_update(
+    runtime_payload: dict[str, Any], tmp_path: Path, already_reported: bool, source: ObservationSource,
+) -> None:
     state = decode_runtime_state(runtime_payload)
     previous = existing_group(runtime_payload)
     state.prc_runs.clear()
     state.wnds.clear()
+    fallback_name = "Steam game 440"
     application = ApplicationIdentity(ident="steam:game:440", name="Team Fortress 2")
-    process_group = ProcessWindowGroup(process=previous.process, application=application, windows=(), owners=())
+    process_group = ProcessWindowGroup(
+        process=previous.process, application=application.model_copy(update={"name": fallback_name}),
+        fallback_name=fallback_name, windows=(), owners=(),
+    )
     runtime = AccountRuntime(1001, state)
     timestamp = 1_790_845_600
 
     result = runtime.reconcile_windows("3", (process_group,), AtspiWindowSnapshot(), timestamp, 0)
     run = result.started[0]
-    start = runtime.create_process_events(result.ended, 0, timestamp)
-    assert len(start) == 1
-    assert start[0].meta.observed_via == ObservationSource.PROCESS
+    start = runtime.create_process_events(result.ended, 0 if already_reported else 5, timestamp)
+    assert len(start) == int(already_reported)
     assert run.sess_ident == "3"
     assert state.wnds == []
 
-    window = previous.windows[0].model_copy(update={"source": ObservationSource.EWMH, "bus": "ewmh", "path": "10"})
-    window_group = ProcessWindowGroup(process=previous.process, application=application, windows=(window,), owners=(previous.process,))
+    window = previous.windows[0].model_copy(update={"source": source, "title": application.name})
+    window_group = ProcessWindowGroup(
+        process=previous.process, application=application, fallback_name=fallback_name,
+        windows=(window,), owners=(previous.process,),
+    )
     observed = runtime.reconcile_windows("3", (window_group,), AtspiWindowSnapshot(windows=(window,)), timestamp + 5, 5)
     assert observed.started == observed.ended == ()
     assert state.prc_runs == [run]
     assert len(state.wnds) == 1
 
+    store = RuntimeStateStore(tmp_path)
+    store.save(runtime.uid, state)
+    restored = store.load(runtime.uid)
+    assert restored is not None
+    runtime = AccountRuntime(runtime.uid, restored)
+    run = restored.prc_runs[0]
+    changed = runtime.create_process_events((), 5, timestamp + 5)
+    expected_type = ProcessUpdateEvent if already_reported else ProcessStartEvent
+    assert len(changed) == 1
+    assert isinstance(changed[0], expected_type)
+    assert changed[0].application == application
+    assert changed[0].run_ident == run.run_ident
+    assert changed[0].timestamp == (timestamp + 5 if already_reported else timestamp)
+    assert run.started == timestamp
+    assert run.duration == 5
+    assert not run.application_update_pending
+
+    renamed_group = ProcessWindowGroup(
+        process=previous.process, application=application.model_copy(update={"name": "Team Fortress 2 — score"}),
+        fallback_name=fallback_name, windows=(window,), owners=(previous.process,),
+    )
+    runtime.reconcile_windows("3", (renamed_group,), AtspiWindowSnapshot(windows=(window,)), timestamp + 5, 0)
+    assert runtime.create_process_events((), 5, timestamp + 5) == ()
+
     vanished = runtime.reconcile_windows("3", (process_group,), AtspiWindowSnapshot(), timestamp + 10, 5)
     assert vanished.started == vanished.ended == ()
-    assert state.prc_runs == [run]
-    assert state.wnds == []
+    assert restored.prc_runs == [run]
+    assert restored.wnds == []
+    assert run.application == application
+    assert runtime.create_process_events((), 5, timestamp + 10) == ()
+
+    store.save(runtime.uid, restored)
+    restored = store.load(runtime.uid)
+    assert restored is not None
+    runtime = AccountRuntime(runtime.uid, restored)
+    assert runtime.create_process_events((), 5, timestamp + 10) == ()
 
     ended = runtime.reconcile_windows("3", (), AtspiWindowSnapshot(), timestamp + 15, 5)
-    events = runtime.create_process_events(ended.ended, 0, timestamp + 15)
+    events = runtime.create_process_events(ended.ended, 5, timestamp + 15)
     assert len(events) == 1
     assert events[0].type == EventType.PRC_END
     assert events[0].duration == 15
-    assert events[0].run_ident == start[0].run_ident
-    assert state.prc_runs == []
+    assert events[0].run_ident == changed[0].run_ident
+    assert restored.prc_runs == []
+    starts = [event for event in (*start, *changed, *events) if isinstance(event, ProcessStartEvent)]
+    assert len(starts) == 1
+    assert starts[0].run_ident == events[0].run_ident
+    assert starts[0].meta.observed_via == ObservationSource.PROCESS
 
 
 def test_unavailable_source_preserves_its_previously_observed_windows(runtime_payload: dict[str, Any]) -> None:

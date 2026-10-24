@@ -53,6 +53,7 @@ class ProcessRun(_RuntimeModel):
     prc_name: NonEmptyString
     exe: NonEmptyString
     application: ApplicationIdentity | None = None
+    application_update_pending: bool = False
     started: NonNegativeInt
     duration: NonNegativeInt
     reported: bool
@@ -64,6 +65,9 @@ class ProcessRun(_RuntimeModel):
 
         if self.reported != (self.run_ident is not None):
             raise ValueError("reported must be true exactly when run_ident is set")
+
+        if self.application_update_pending and (not self.reported or self.application is None):
+            raise ValueError("pending application update requires a reported application")
 
         require_unique(self.wnds, "window ident")
         return self

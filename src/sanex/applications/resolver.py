@@ -57,4 +57,4 @@ class ApplicationResolver:
 
             root = parent_match.process
 
-        return ApplicationMatch(root, match.application)
+        return ApplicationMatch(root, match.application, fallback_name=match.fallback_name)

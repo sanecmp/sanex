@@ -153,6 +153,7 @@ class ProcessWindowGroup:
     windows: tuple[AtspiWindow, ...]
     owners: tuple[ProcessIdentity, ...]
     application: ApplicationIdentity | None = None
+    fallback_name: str | None = None
 
     @property
     def source(self) -> ObservationSource:
@@ -241,7 +242,18 @@ class WindowProcessResolver:
                 continue
 
             key = (process.pid, process.started, match.application.ident if match.application else "")
-            roots[key] = match
+            previous = roots.get(key)
+            is_fallback = match.application is not None and match.application.name == match.fallback_name
+
+            # A helper without a title must not hide a sibling's discovered name.
+            if (
+                previous is None
+                or not is_fallback
+                or previous.application is None
+                or previous.application.name == previous.fallback_name
+            ):
+                roots[key] = match
+
             grouped.setdefault(key, []).append((window, owner))
 
         if self.observer is not None and sess_ident:
@@ -267,6 +279,7 @@ class WindowProcessResolver:
                 ProcessWindowGroup(
                     process=roots[key].process,
                     application=roots[key].application,
+                    fallback_name=roots[key].fallback_name,
                     windows=tuple(window for window, owner in members),
                     owners=tuple(owner for window, owner in members),
                 )

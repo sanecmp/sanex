@@ -109,9 +109,15 @@ registers again if it restarts. Reading status does not enable account data
 collection; accounts without configured limits also receive an unlimited status.
 To diagnose startup, run `/opt/sanex/bin/sanex-indicator`
 as the logged-in user, without sudo. When the process is outside a logind session,
-the indicator selects that user's unique non-closing graphical session. If there
-are several, use `loginctl list-sessions` and pass the intended session explicitly
-with `--session SESSION-ID`.
+the indicator selects that user's unique ready graphical session (`online` or
+`active`). If there are several, use `loginctl list-sessions` and pass the
+intended session explicitly with `--session SESSION-ID`.
+
+Graphical sessions in logind's `opening` state are kept in session accounting
+without starting window observers or authorizing the indicator. Observers start
+when the session becomes `online` or `active`; this does not create another
+session run. Observers stop at `closing`, while accounting keeps the session
+until it disappears from logind.
 
 uv's managed application environment is `/opt/sanex/bundle/sanecmp-sanex`.
 Configuration and counters stay in separate protected directories under
@@ -143,6 +149,9 @@ trees remain separate launches. Steam games with available SteamAppId or
 SteamGameId hints are not merged into the Steam client. A Proton compatibility
 ID alone does not identify a game: installers also use it. A game's window title
 provides its display name when available; otherwise it falls back to its Steam ID.
+If the window appears later, its title replaces the fallback for that same launch,
+including when its start has already been sent to sanea. The discovered name is
+kept when the window disappears; later title changes do not create more updates.
 No Steam manifests, installation files, library scans or network lookups are used.
 
 AppImages use the original absolute `APPIMAGE` path as their application ID,

@@ -5,7 +5,7 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
-from sanelib.protocol import Actor, Event, EventType, decode_config, iterate_event_records
+from sanelib.protocol import Actor, ApplicationIdentity, Event, EventType, decode_config, iterate_event_records
 
 from sanex.model.state import decode_runtime_state
 from sanex.service.runtime import RuntimeRepository
@@ -138,6 +138,39 @@ def test_same_boot_preserves_runs_and_does_not_synthesize_endings(
     assert restored == state
     assert runtimes.event_store.pending(1001) == ()
     assert runtimes.event_store.open_path(1001).read_bytes() == b""
+
+
+def test_new_boot_delivers_pending_name_before_ending_the_launch_even_after_a_failed_state_save(
+    tmp_path: Path, config_payload: dict[str, Any], runtime_payload: dict[str, Any],
+) -> None:
+    config = decode_config(config_payload)
+    state = decode_runtime_state(runtime_payload)
+    application = ApplicationIdentity(ident="steam:game:440", name="Team Fortress 2")
+    state.prc_runs[0].application = application
+    state.prc_runs[0].application_update_pending = True
+    runtimes = RuntimeRepository(RuntimeStateStore(tmp_path), EventStore(tmp_path), "synthetic-next-boot")
+    runtimes.state_store.save(1001, state)
+
+    with patch.object(RuntimeStateStore, "save", side_effect=OSError("synthetic save failure")):
+
+        with pytest.raises(OSError, match="synthetic save failure"):
+            runtimes.load(config.accounts[0], config.ident)
+
+    restarted = RuntimeRepository(RuntimeStateStore(tmp_path), EventStore(tmp_path), "synthetic-next-boot")
+    restored = restarted.load(config.accounts[0], config.ident)
+    events = tuple(
+        event
+        for packet in restarted.event_store.pending(1001)
+        for event in iterate_event_records(packet.path.read_bytes())
+    )
+
+    assert [(event.type, event.run_ident) for event in events] == [
+        (EventType.SESSION_END, 120), (EventType.PRC_UPDATE, 121), (EventType.PRC_END, 121),
+    ]
+    assert events[1].application == application
+    assert events[2].duration == 3137
+    assert restored.sess_runs == restored.prc_runs == []
+    assert restored.event_seq == events[-1].seq
 
 
 def test_boot_recovery_retries_failed_state_save_without_duplicate_endings(
