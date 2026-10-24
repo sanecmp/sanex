@@ -133,9 +133,9 @@ the version you want in **Update sanex** and start the update.
 
 Application names and IDs are recorded separately from raw process names,
 executables and window-owner PIDs. Recognition supports Steam's client helpers
-and game IDs, Flatpak instance descriptors (including AT-SPI proxies), desktop
-launcher hints, and absolute GJS script paths or resource URIs. Unknown
-applications keep their raw process identity; no GJS application is ignored
+and game IDs, Flatpak instance descriptors (including AT-SPI proxies), AppImage
+runtime hints, desktop launcher hints, and absolute GJS script paths or resource
+URIs. Unknown applications keep their raw process identity; no GJS application is ignored
 solely because it uses the interpreter.
 
 An application ID identifies the application, not its launch. Separate process
@@ -144,6 +144,13 @@ SteamGameId hints are not merged into the Steam client. A Proton compatibility
 ID alone does not identify a game: installers also use it. A game's window title
 provides its display name when available; otherwise it falls back to its Steam ID.
 No Steam manifests, installation files, library scans or network lookups are used.
+
+AppImages use the original absolute `APPIMAGE` path as their application ID,
+not the changing `/tmp/.mount_*` executable path. The executable must be inside
+the runtime's `APPDIR`; programs launched outside it do not inherit this identity.
+The image itself is not read or executed for identification. Renaming or moving
+the original image changes its ID; remounting it does not. Old records lacking
+these hints remain unchanged rather than being merged by executable name alone.
 
 AT-SPI remains the primary window source. EWMH additionally discovers ordinary
 X11 and Xwayland windows, including games without accessible windows. It uses

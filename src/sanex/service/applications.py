@@ -4,6 +4,7 @@ from functools import partial
 from pathlib import Path
 
 from ..applications import ApplicationResolver
+from ..applications.appimage import ENVIRONMENT_KEYS as APPIMAGE_ENVIRONMENT_KEYS, identify_appimage
 from ..applications.common import ApplicationProvider, MetadataReader
 from ..applications.desktop import ENVIRONMENT_KEYS as DESKTOP_ENVIRONMENT_KEYS, DesktopCatalog, identify_desktop
 from ..applications.flatpak import ENVIRONMENT_KEYS as FLATPAK_ENVIRONMENT_KEYS, identify_flatpak
@@ -21,6 +22,7 @@ def create_application_resolver(
         providers=(
             ApplicationProvider(identify_steam, STEAM_ENVIRONMENT_KEYS),
             ApplicationProvider(partial(identify_flatpak, find_name=catalog.find_name), FLATPAK_ENVIRONMENT_KEYS),
+            ApplicationProvider(identify_appimage, APPIMAGE_ENVIRONMENT_KEYS),
             ApplicationProvider(partial(identify_desktop, catalog=catalog), DESKTOP_ENVIRONMENT_KEYS),
             ApplicationProvider(identify_gjs),
         ),
