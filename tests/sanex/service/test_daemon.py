@@ -335,7 +335,10 @@ def test_factory_migrates_state_from_another_configuration(
 async def test_service_starts_walks_saves_and_closes_resources(
     tmp_path: Path,
     config_payload: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
+    monkeypatch.setattr("sanex.service.daemon.get_installed_version", lambda: "0.1.42")
     config = decode_config(config_payload)
     clock = ActiveTimeClock(now=lambda: 0)
     supervisor = FakeSupervisor(clock)
@@ -357,7 +360,8 @@ async def test_service_starts_walks_saves_and_closes_resources(
     service.indicator_server = indicator
     supervisor.on_walk = service.request_stop
 
-    await service.run()
+    with caplog.at_level("INFO"):
+        await service.run()
 
     assert supervisor.calls == [(True, None)]
     assert saver.saved == [(runtime.uid, runtime.state)]
@@ -367,6 +371,8 @@ async def test_service_starts_walks_saves_and_closes_resources(
     assert indicator.started
     assert indicator.published == [1_790_956_800]
     assert indicator.closed
+    assert "Sanex service started: version 0.1.42" in caplog.text
+    assert "Sanex service stopped (stop requested)" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -655,8 +661,11 @@ class FakeAsyncCloser:
 
 
 class FailedSyncScheduler:
+    def __init__(self, failure: BaseException) -> None:
+        self.failure = failure
+
     async def run(self, stop_requested: asyncio.Event) -> None:
-        raise RuntimeError("synchronization bug")
+        raise self.failure
 
 
 @pytest.mark.asyncio
@@ -693,10 +702,17 @@ async def test_service_owns_sync_scheduler_and_network_client(
     assert closer.closed
 
 
+@pytest.mark.parametrize(("failure", "stop_reason"), [
+    pytest.param(RuntimeError("synchronization bug"), "failure: RuntimeError", id="failure"),
+    pytest.param(asyncio.CancelledError("synchronization cancelled"), "cancelled", id="cancelled"),
+])
 @pytest.mark.asyncio
 async def test_service_propagates_background_sync_failure_and_closes_resources(
     tmp_path: Path,
     config_payload: dict[str, Any],
+    caplog: pytest.LogCaptureFixture,
+    failure: BaseException,
+    stop_reason: str,
 ) -> None:
     config = decode_config(config_payload)
     clock = ActiveTimeClock(now=lambda: 0)
@@ -716,16 +732,17 @@ async def test_service_propagates_background_sync_failure_and_closes_resources(
         clock,
     )
     closer = FakeAsyncCloser()
-    service.sync_scheduler = FailedSyncScheduler()
+    service.sync_scheduler = FailedSyncScheduler(failure)
     service.sync_closer = closer
 
-    with pytest.raises(RuntimeError, match="synchronization bug"):
+    with caplog.at_level("INFO"), pytest.raises(type(failure), match="synchronization"):
         await service.run()
 
     assert saver.saved == [(runtime.uid, runtime.state)]
     assert closer.closed
     assert agents.closed
     assert logind.closed
+    assert f"Sanex service stopped ({stop_reason})" in caplog.text
 
 
 class FakeUpdateScheduler:

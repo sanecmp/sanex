@@ -45,18 +45,37 @@ class SyncScheduler:
 
     async def run(self, stop_requested: asyncio.Event) -> None:
         """Attempt immediately, then wait according to the latest config."""
+        previous_outcome: str | None = None
 
         while not stop_requested.is_set():
+            outcome = "online"
             try:
                 successful = await self.run_once()
 
             except SaneaException as error:
-                logger.error("Synchronization attempt failed (%s)", type(error).__name__)
+                outcome = type(error).__name__
+
+                if outcome != previous_outcome:
+                    logger.error("Synchronization attempt failed (%s)", outcome)
+
                 successful = False
 
+            else:
+
+                if not successful:
+                    outcome = "undiscovered"
+
+                    if outcome != previous_outcome:
+                        logger.info("Sanea was not discovered; using saved configuration")
+
             if successful:
+
+                if previous_outcome not in (None, "online"):
+                    logger.info("Sanea connection restored")
+
                 logger.info("Synchronization completed")
 
+            previous_outcome = outcome
             current_config = self.config()
             delay = (
                 current_config.sync_interval

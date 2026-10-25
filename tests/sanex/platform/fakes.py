@@ -1,5 +1,6 @@
 """Shared low-level platform test doubles."""
 
+import asyncio
 from collections import deque
 from collections.abc import Callable
 from types import SimpleNamespace
@@ -17,8 +18,11 @@ class FakeBus:
         self.messages: list[object] = []
         self.connected = False
         self.handlers: list[Callable[[object], object]] = []
+        self.disconnect_wait_count = 0
+        self._disconnect_future: asyncio.Future[None] | None = None
 
     async def connect(self) -> object:
+        self._disconnect_future = asyncio.get_running_loop().create_future()
         self.connected = True
         self._fail("connect")
         return self
@@ -51,7 +55,22 @@ class FakeBus:
     def disconnect(self) -> None:
         self.disconnect_count += 1
         self.connected = False
+
+        if self._disconnect_future is not None and not self._disconnect_future.done():
+            self._disconnect_future.set_result(None)
+
         self._fail("disconnect")
+
+    async def wait_for_disconnect(self) -> None:
+        self.disconnect_wait_count += 1
+        assert self._disconnect_future is not None
+        await self._disconnect_future
+
+    def drop(self, error: BaseException) -> None:
+        """Simulate an unsolicited peer disconnect, retaining its exception."""
+        self.connected = False
+        assert self._disconnect_future is not None
+        self._disconnect_future.set_exception(error)
 
     def _fail(self, operation: str) -> None:
 

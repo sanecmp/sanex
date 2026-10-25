@@ -127,3 +127,35 @@ async def test_unexpected_exchange_failure_is_not_suppressed() -> None:
 
     with pytest.raises(RuntimeError, match="bug"):
         await scheduler.run(asyncio.Event())
+
+
+@pytest.mark.asyncio
+async def test_connection_changes_are_logged_without_repeating_unchanged_failures(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    failure = SyncTransportError("sync", OSError("synthetic secret"))
+    outcomes = [False, False, True, True, failure, failure, False, False, True]
+    exchange = SimpleNamespace(run=AsyncMock(side_effect=outcomes))
+    config = SimpleNamespace(sync_interval=300, discovery_interval=30)
+    delays = []
+
+    async def waiter(stop_requested: asyncio.Event, delay: float) -> bool:
+        delays.append(delay)
+        return len(delays) == len(outcomes)
+
+    scheduler = SyncScheduler(lambda: config, exchange, waiter)
+
+    with caplog.at_level("INFO"):
+        await scheduler.run(asyncio.Event())
+
+    assert delays == [30, 30, 300, 300, 30, 30, 30, 30, 300]
+    assert caplog.messages == [
+        "Sanea was not discovered; using saved configuration",
+        "Sanea connection restored",
+        "Synchronization completed",
+        "Synchronization completed",
+        "Synchronization attempt failed (SyncTransportError)",
+        "Sanea was not discovered; using saved configuration",
+        "Sanea connection restored",
+        "Synchronization completed",
+    ]

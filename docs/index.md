@@ -98,6 +98,10 @@ or overwritten.
 
 After registration, `sanex.path` starts `sanex.service` automatically. The status indicator starts automatically when a user next signs in to GNOME; installation does not modify already running sessions. Use a local wheel path instead of the indexed requirement to install an unpublished build.
 The private technical log is written to `/var/log/sanex/sanex.log` and rotated automatically.
+Startup records include the installed sanex version and configuration ID; stop
+records distinguish requested stops, cancellation and failures. Missing sanea
+discovery replies and synchronization errors are logged when their state changes,
+with a separate recovery message after synchronization resumes.
 Before registration, `sanex.service` remains inactive and the indicator reports
 that the service is unavailable; this is expected until registration creates
 the configuration file.
@@ -167,6 +171,10 @@ the session user's local DISPLAY and Xauthority hints from their systemd user
 manager; connection setup runs under that user's EUID. Native Wayland windows
 remain outside EWMH. Windows belonging to an already accessible PID are not
 added again. Failed sources preserve their known windows rather than ending runs.
+If the AT-SPI bus disconnects, sanex releases it and reconnects on the next
+observation, authenticating again under the session owner's EUID. Disconnect
+completion is also retrieved during shutdown. X11 connection warnings include
+the failure category without exposing the session environment or credentials.
 
 After a Steam client is observed, sanex also checks same-user processes for
 SteamAppId or SteamGameId. Window and process observations share one launch and

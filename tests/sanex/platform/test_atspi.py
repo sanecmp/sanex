@@ -83,7 +83,7 @@ async def test_discovers_top_level_windows_and_reuses_bus_pid(
     assert [message.member for message in discovery_bus.messages] == ["GetAddress"]
     assert [message.member for message in atspi_bus.messages].count("GetConnectionUnixProcessID") == 1
     assert not discovery_bus.connected
-    client.close()
+    await client.close()
     assert not atspi_bus.connected
 
 
@@ -317,3 +317,67 @@ async def test_connect_preserves_primary_failure_and_logs_cleanup_error(caplog: 
 
     assert "cleanup failure" in caplog.text
     assert discovery.disconnect_count == 1
+
+
+@pytest.mark.asyncio
+async def test_reconnects_after_idle_bus_disconnect_and_retrieves_its_exception(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    discovery_buses = [FakeBus([dbus_reply(["unix:path=/test/atspi"])]) for _unused in range(2)]
+    accessibility_buses = [FakeBus([dbus_reply([[]])]) for _unused in range(2)]
+    discoveries = iter(discovery_buses)
+    connections = iter(accessibility_buses)
+    client = AtspiClient(lambda: next(discoveries), lambda address: next(connections))
+
+    with caplog.at_level("INFO"):
+        await client.connect()
+        assert (await client.read_windows()).complete
+        accessibility_buses[0].drop(EOFError("synthetic disconnect"))
+
+        await client.connect()
+        assert (await client.read_windows()).complete
+        await client.close()
+        await client.close()
+
+    assert [bus.disconnect_wait_count for bus in discovery_buses] == [1, 1]
+    assert [bus.disconnect_wait_count for bus in accessibility_buses] == [1, 1]
+    assert [bus.disconnect_count for bus in accessibility_buses] == [1, 1]
+    assert "AT-SPI bus disconnected; reconnecting" in caplog.text
+    assert "AT-SPI connection restored" in caplog.text
+    assert "synthetic disconnect" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_shutdown_retrieves_an_idle_disconnect_without_unhandled_future() -> None:
+    discovery = FakeBus([dbus_reply(["unix:path=/test/atspi"])])
+    accessibility = FakeBus([])
+    client = AtspiClient(lambda: discovery, lambda address: accessibility)
+    await client.connect()
+    accessibility.drop(EOFError("synthetic logout"))
+
+    await client.close()
+
+    assert accessibility.disconnect_wait_count == 1
+    assert not accessibility.connected
+
+
+@pytest.mark.asyncio
+async def test_failed_reconnect_can_be_retried_without_reusing_the_dead_bus() -> None:
+    discovery = FakeBus([dbus_reply(["unix:path=/test/atspi"]), dbus_reply(["unix:path=/test/atspi"])])
+    accessibility = FakeBus([])
+    replacement = FakeBus([dbus_reply([[]])])
+    connections = iter((accessibility, replacement))
+    client = AtspiClient(lambda: discovery, lambda address: next(connections))
+    await client.connect()
+    accessibility.drop(EOFError())
+    discovery.failures["connect"] = OSError("synthetic unavailable bus")
+
+    with pytest.raises(AtspiError, match="synthetic unavailable bus"):
+        await client.connect()
+
+    discovery.failures.clear()
+    await client.connect()
+    assert (await client.read_windows()).complete
+    await client.close()
+    assert accessibility.disconnect_wait_count == 1
+    assert replacement.disconnect_wait_count == 1

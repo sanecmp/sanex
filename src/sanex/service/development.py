@@ -163,7 +163,7 @@ class CurrentSessionWindows:
             self._connected = True
 
         elif not sessions and self._connected:
-            self.client.close()
+            await self.client.close()
             self._connected = False
 
     async def read_windows(self, session: LoginSession) -> AtspiWindowSnapshot:
@@ -189,7 +189,7 @@ class CurrentSessionWindows:
         self._sessions = frozenset()
 
         if self._connected:
-            self.client.close()
+            await self.client.close()
             self._connected = False
 
     def _validate_session(self, session: LoginSession) -> None:

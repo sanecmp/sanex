@@ -3,16 +3,19 @@
 from dbus_fast import Message, Variant
 
 from ..exceptions import WindowAgentError
+from ..utils.resources import close_async_resources
 from .atspi import create_addressed_bus
-from .dbus import DBUS_OPERATION_ERRORS, raise_dbus_error
+from .dbus import DBUS_OPERATION_ERRORS, disconnect_bus, raise_dbus_error
 
 
 async def read_session_environment(address: str) -> dict[str, str]:
     """Read DISPLAY and XAUTHORITY without importing arbitrary session variables."""
     bus = create_addressed_bus(address)
+    connected = False
 
     try:
         await bus.connect()
+        connected = True
         reply = await bus.call(Message(
             destination="org.freedesktop.systemd1", path="/org/freedesktop/systemd1",
             interface="org.freedesktop.DBus.Properties", member="Get", signature="ss",
@@ -41,4 +44,4 @@ async def read_session_environment(address: str) -> dict[str, str]:
         raise WindowAgentError("read display environment", type(failure).__name__) from failure
 
     finally:
-        bus.disconnect()
+        await close_async_resources(("disconnect user-manager bus", lambda: disconnect_bus(bus, wait=connected)))

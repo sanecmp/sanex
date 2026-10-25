@@ -6,6 +6,8 @@ import logging
 import os
 import pwd
 import socket
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from ..exceptions import WindowAgentError
@@ -20,6 +22,23 @@ _PR_SET_DUMPABLE = 4
 logger = logging.getLogger(__name__)
 
 
+@contextmanager
+def use_session_identity(uid: int) -> Iterator[None]:
+    """Authenticate session connections as their owner, restoring the previous EUID."""
+    previous_uid = os.geteuid()
+
+    if previous_uid == uid:
+        yield
+        return
+
+    os.seteuid(uid)
+    try:
+        yield
+
+    finally:
+        close_resources(("restore previous EUID", lambda: os.seteuid(previous_uid)))
+
+
 async def run_agent(fd: int, uid: int, sess_ident: str) -> None:
     """Connect as the session user, restore root EUID and serve requests."""
     _validate_identity(fd, uid, sess_ident)
@@ -32,10 +51,12 @@ async def run_agent(fd: int, uid: int, sess_ident: str) -> None:
         channel.setblocking(False)
         reader, writer = await asyncio.open_connection(sock=channel)
         user_bus_address = f"unix:path=/run/user/{uid}/bus"
-        client = DesktopWindowClient(AtspiClient(session_bus_factory=lambda: create_addressed_bus(user_bus_address)))
+        client = DesktopWindowClient(AtspiClient(
+            session_bus_factory=lambda: create_addressed_bus(user_bus_address),
+            connection_scope=lambda: use_session_identity(uid),
+        ))
 
-        try:
-            os.seteuid(uid)
+        with use_session_identity(uid):
             try:
                 environment = await read_session_environment(user_bus_address)
 
@@ -44,9 +65,6 @@ async def run_agent(fd: int, uid: int, sess_ident: str) -> None:
                 environment = {}
 
             await client.connect(environment, Path(pwd.getpwuid(uid).pw_dir))
-
-        finally:
-            close_resources(("restore root EUID", lambda: os.seteuid(0)))
 
         await WindowAgentServer(sess_ident, client, reader, writer).serve()
 

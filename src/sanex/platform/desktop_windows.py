@@ -10,7 +10,7 @@ from sanelib.protocol import ObservationSource
 
 from ..exceptions import AtspiError, X11Error
 from ..model.window import AtspiWindow, AtspiWindowSnapshot
-from ..utils.resources import close_resources
+from ..utils.resources import close_async_resources
 from .atspi import AtspiClient
 from .x11 import X11Client
 
@@ -34,33 +34,43 @@ class DesktopWindowClient:
             await self.accessibility.connect()
             self._accessibility_ready = True
 
-        except AtspiError:
-            logger.warning("Accessibility source is unavailable; X11 observation remains available")
+        except AtspiError as error:
+            logger.warning("Accessibility source is unavailable (%s); trying X11 observation", type(error.cause).__name__)
 
         try:
             self.x11.connect(os.environ if environment is None else environment, Path.home() if home is None else home)
 
-        except X11Error:
-            logger.warning("X11 source is unavailable; using accessibility only")
+        except X11Error as error:
+            logger.warning("X11 source is unavailable (%s); using accessibility only", error)
             self._x11_unavailable = True
 
-    def close(self) -> None:
+    async def close(self) -> None:
         """Release both sources even if one close operation fails."""
-        close_resources(("close X11 client", self.x11.close), ("close accessibility client", self.accessibility.close))
+        self._accessibility_ready = False
+        await close_async_resources(("close X11 client", self.x11.close), ("close accessibility client", self.accessibility.close))
 
     async def read_windows(self) -> AtspiWindowSnapshot:
         """Merge snapshots, preserving runs belonging to an inaccessible source."""
 
         try:
 
-            if not self._accessibility_ready:
-                await self.accessibility.connect()
-                self._accessibility_ready = True
-
+            await self.accessibility.connect()
             accessible = await self.accessibility.read_windows()
 
-        except AtspiError:
+        except AtspiError as error:
+
+            if self._accessibility_ready:
+                logger.warning("Accessibility source is unavailable (%s); retrying", type(error.cause).__name__)
+
+            self._accessibility_ready = False
             accessible = AtspiWindowSnapshot(unavailable_sources=(ObservationSource.ATSPI,))
+
+        else:
+
+            if not self._accessibility_ready:
+                logger.info("Accessibility source restored")
+
+            self._accessibility_ready = True
 
         try:
             supplemental = self.x11.read_windows()

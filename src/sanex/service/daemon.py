@@ -267,6 +267,7 @@ class SanexService:
             loop, self.request_stop, enabled=self.install_signal_handlers, warning_logger=logger,
         )
         sync_task: asyncio.Task[None] | None = None
+        stop_reason = "stop requested"
         try:
             await self.logind.connect()
             self._connected = True
@@ -287,8 +288,8 @@ class SanexService:
                 )
 
             logger.info(
-                "Sanex service started with config %d and %d account(s)",
-                self.config.ident, len(self.config.accounts),
+                "Sanex service started: version %s, config %d, %d account(s)",
+                get_installed_version(), self.config.ident, len(self.config.accounts),
             )
 
             while not self._stop_requested.is_set():
@@ -339,6 +340,14 @@ class SanexService:
                         return_exceptions=True,
                     )
 
+        except asyncio.CancelledError:
+            stop_reason = "cancelled"
+            raise
+
+        except Exception as error:
+            stop_reason = f"failure: {type(error).__name__}"
+            raise
+
         finally:
             remove_signal_handlers(loop, installed_signals)
 
@@ -353,7 +362,7 @@ class SanexService:
 
             if not self._updating:
                 await self._shutdown()
-                logger.info("Sanex service stopped")
+                logger.info("Sanex service stopped (%s)", stop_reason)
 
     async def prepare_update(self) -> None:
         """Stop service work and close resources before replacing the process."""

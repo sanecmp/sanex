@@ -9,6 +9,7 @@ import pytest_asyncio
 
 from sanex.service import window_agent as agent_module
 from sanex.platform.atspi import AtspiClient
+from sanex.platform.desktop_windows import DesktopWindowClient
 from tests.sanex.platform.fakes import FakeBus, dbus_reply
 from tests.sanex.resource_fakes import FakeSocket, FakeWriter
 
@@ -22,9 +23,16 @@ async def agent_boundaries(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     reader = asyncio.StreamReader()
     reader.feed_eof()
     privileges = []
+    identity = SimpleNamespace(uid=0)
+
+    def set_euid(uid: int) -> None:
+        privileges.append(uid)
+        identity.uid = uid
+
     dumping = []
     monkeypatch.setattr(agent_module.os, "getresuid", lambda: (0, 0, 0))
-    monkeypatch.setattr(agent_module.os, "seteuid", privileges.append)
+    monkeypatch.setattr(agent_module.os, "geteuid", lambda: identity.uid)
+    monkeypatch.setattr(agent_module.os, "seteuid", set_euid)
     libc = SimpleNamespace(prctl=lambda *args: dumping.append(args) or 0)
     monkeypatch.setattr(agent_module.ctypes, "CDLL", lambda *args, **kwargs: libc)
     monkeypatch.setattr(agent_module, "socket", SimpleNamespace(socket=lambda **kwargs: channel))
@@ -38,7 +46,7 @@ async def agent_boundaries(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     )
     return SimpleNamespace(
         channel=channel, writer=writer, reader=reader, discovery=discovery,
-        accessibility=accessibility, privileges=privileges, dumping=dumping,
+        accessibility=accessibility, privileges=privileges, dumping=dumping, identity=identity,
     )
 
 
@@ -81,6 +89,8 @@ async def test_restore_failure_is_reported_without_replacing_connect_failure(
         if uid == 0:
             raise PermissionError("restore denied")
 
+        agent_boundaries.identity.uid = uid
+
     if primary:
         agent_boundaries.discovery.failures["connect"] = RuntimeError("connect failed")
 
@@ -94,3 +104,43 @@ async def test_restore_failure_is_reported_without_replacing_connect_failure(
     assert agent_boundaries.writer.closed and agent_boundaries.writer.waited
     assert "restore denied" in caplog.text
     assert agent_boundaries.privileges == [1001, 0]
+
+
+@pytest.mark.asyncio
+async def test_reconnecting_inside_a_running_agent_uses_the_session_euid(
+    monkeypatch: pytest.MonkeyPatch, agent_boundaries: SimpleNamespace,
+) -> None:
+    replacement = FakeBus([dbus_reply([[]])])
+    connections = iter((agent_boundaries.accessibility, replacement))
+    agent_boundaries.discovery.responses.append(dbus_reply(["unix:path=/test/atspi"]))
+    agent_boundaries.accessibility.responses.append(dbus_reply([[]]))
+    connection_uids = []
+
+    def create_accessibility(address: str) -> FakeBus:
+        connection_uids.append(agent_boundaries.identity.uid)
+        return next(connections)
+
+    def create_server(
+        session: str, client: DesktopWindowClient, reader: asyncio.StreamReader, writer: FakeWriter,
+    ) -> SimpleNamespace:
+        async def serve() -> None:
+            assert agent_boundaries.identity.uid == 0
+            assert (await client.read_windows()).complete
+            agent_boundaries.accessibility.drop(EOFError("synthetic disconnect"))
+            assert (await client.read_windows()).complete
+            assert agent_boundaries.identity.uid == 0
+
+        return SimpleNamespace(serve=serve)
+
+    monkeypatch.setattr(
+        agent_module, "AtspiClient", lambda **kwargs: AtspiClient(atspi_bus_factory=create_accessibility, **kwargs),
+    )
+    monkeypatch.setattr(agent_module, "WindowAgentServer", create_server)
+
+    await agent_module.run_agent(7, 1001, "3")
+
+    assert connection_uids == [1001, 1001]
+    assert agent_boundaries.privileges == [1001, 0, 1001, 0]
+    assert agent_boundaries.accessibility.disconnect_wait_count == 1
+    assert replacement.disconnect_wait_count == 1
+    assert agent_boundaries.writer.closed and agent_boundaries.writer.waited

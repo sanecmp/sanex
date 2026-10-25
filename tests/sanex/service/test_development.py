@@ -38,7 +38,7 @@ class FakeAtspi:
     async def connect(self) -> None:
         self.connected = True
 
-    def close(self) -> None:
+    async def close(self) -> None:
         self.closed = True
         self.connected = False
 

@@ -2,6 +2,7 @@
 
 import logging
 from collections.abc import Callable
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
 from types import TracebackType
 from typing import Self, TypeVar
@@ -11,14 +12,14 @@ from dbus_fast.aio import MessageBus
 from dbus_fast.auth import AuthExternal, UID_NOT_SPECIFIED
 
 from ..exceptions import AtspiError
-from ..utils.resources import close_resources
+from ..utils.resources import close_async_resources
 from ..model.window import (
     AtspiWindow,
     AtspiWindowReference,
     AtspiWindowSnapshot,
     WindowRole,
 )
-from .dbus import DBUS_OPERATION_ERRORS, SystemBus, property_value, raise_dbus_error
+from .dbus import DBUS_OPERATION_ERRORS, SystemBus, disconnect_bus, property_value, raise_dbus_error
 
 
 _SESSION_DESTINATION = "org.a11y.Bus"
@@ -62,6 +63,7 @@ class AtspiClient:
 
     session_bus_factory: Callable[[], SystemBus] = create_session_bus
     atspi_bus_factory: Callable[[str], SystemBus] = create_addressed_bus
+    connection_scope: Callable[[], AbstractContextManager[None]] = nullcontext
     _bus: SystemBus | None = field(default=None, init=False, repr=False)
 
     async def __aenter__(self) -> Self:
@@ -74,55 +76,71 @@ class AtspiClient:
         exception: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        self.close()
+        await self.close()
 
     async def connect(self) -> None:
         """Discover and connect to the AT-SPI bus."""
 
-        if self._bus is not None:
+        reconnecting = self._bus is not None
+
+        if self._bus is not None and self._bus.connected:
             return
 
-        discovery_bus = self.session_bus_factory()
-        discovery_owned = True
-        bus = None
+        if reconnecting:
+            logger.warning("AT-SPI bus disconnected; reconnecting")
+            await self.close()
 
-        try:
-            await discovery_bus.connect()
-            reply = await discovery_bus.call(
-                Message(
-                    destination=_SESSION_DESTINATION,
-                    path=_SESSION_PATH,
-                    interface=_SESSION_INTERFACE,
-                    member="GetAddress",
+        with self.connection_scope():
+            discovery_bus = self.session_bus_factory()
+            discovery_owned = True
+            discovery_connected = False
+            bus = None
+            bus_connected = False
+
+            try:
+                await discovery_bus.connect()
+                discovery_connected = True
+                reply = await discovery_bus.call(
+                    Message(
+                        destination=_SESSION_DESTINATION,
+                        path=_SESSION_PATH,
+                        interface=_SESSION_INTERFACE,
+                        member="GetAddress",
+                    )
                 )
-            )
-            raise_dbus_error(reply)
-            address = self._single_value(reply.body, str, "GetAddress")
-            bus = self.atspi_bus_factory(address)
-            await bus.connect()
-            discovery_owned = False
-            discovery_bus.disconnect()
+                raise_dbus_error(reply)
+                address = self._single_value(reply.body, str, "GetAddress")
+                bus = self.atspi_bus_factory(address)
+                await bus.connect()
+                bus_connected = True
+                discovery_owned = False
+                await disconnect_bus(discovery_bus)
 
-        except BaseException as error:
-            operations = []
+            except BaseException as error:
+                operations = []
 
-            if discovery_owned:
-                operations.append(("disconnect discovery bus", discovery_bus.disconnect))
+                if discovery_owned:
+                    operations.append((
+                        "disconnect discovery bus", lambda: disconnect_bus(discovery_bus, wait=discovery_connected),
+                    ))
 
-            if bus is not None:
-                operations.append(("disconnect accessibility bus", bus.disconnect))
+                if bus is not None:
+                    operations.append(("disconnect accessibility bus", lambda: disconnect_bus(bus, wait=bus_connected)))
 
-            close_resources(*operations)
+                await close_async_resources(*operations)
 
-            if isinstance(error, DBUS_OPERATION_ERRORS):
-                raise AtspiError("connect", error) from error
+                if isinstance(error, DBUS_OPERATION_ERRORS):
+                    raise AtspiError("connect", error) from error
 
-            raise
+                raise
 
-        self._bus = bus
+            self._bus = bus
 
-    def close(self) -> None:
-        """Disconnect from the accessibility bus."""
+        if reconnecting:
+            logger.info("AT-SPI connection restored")
+
+    async def close(self) -> None:
+        """Disconnect from the accessibility bus and wait for its release."""
 
         if self._bus is None:
             return
@@ -130,7 +148,7 @@ class AtspiClient:
         bus = self._bus
         self._bus = None
         try:
-            bus.disconnect()
+            await disconnect_bus(bus)
 
         except DBUS_OPERATION_ERRORS as error:
             raise AtspiError("disconnect", error) from error
@@ -358,7 +376,7 @@ class AtspiClient:
 
     def _connected_bus(self) -> SystemBus:
 
-        if self._bus is None:
+        if self._bus is None or not self._bus.connected:
             raise AtspiError("access", RuntimeError("client is not connected"))
 
         return self._bus
