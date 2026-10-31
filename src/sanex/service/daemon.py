@@ -76,10 +76,16 @@ class ServiceWalkResult(Protocol):
 class ServiceSupervisor(Protocol):
     """Accounting supervisor operations used by the service loop."""
 
+    def read_timestamp(self) -> int:
+        """Read the wall-clock timestamp before waiting for shared state."""
+        ...
+
     async def walk(
         self,
         existing: bool = False,
         elapsed: int | None = None,
+        *,
+        timestamp: int | None = None,
     ) -> ServiceWalkResult: ...
 
 
@@ -472,8 +478,10 @@ class SanexService:
     async def _handle_sleep_change(self, sleeping: bool) -> None:
 
         if sleeping:
+            # Waiting for shared state must not move pre-sleep seconds to a later hour.
+            timestamp = self.supervisor.read_timestamp()
             elapsed = self.clock.set_sleeping(True)
-            await self._walk(elapsed=elapsed)
+            await self._walk(elapsed=elapsed, timestamp=timestamp)
             return
 
         self.clock.set_sleeping(False)
@@ -483,10 +491,12 @@ class SanexService:
         self,
         existing: bool = False,
         elapsed: int | None = None,
+        *,
+        timestamp: int | None = None,
     ) -> None:
 
         async with self._state_lock:
-            result = await self.supervisor.walk(existing=existing, elapsed=elapsed)
+            result = await self.supervisor.walk(existing=existing, elapsed=elapsed, timestamp=timestamp)
             self._publish_indicator(result)
 
     def _publish_indicator(self, result: ServiceWalkResult) -> None:

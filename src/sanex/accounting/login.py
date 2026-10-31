@@ -47,7 +47,7 @@ def _reconcile_login_sessions(
     previous = {run.sess_ident: run for run in state.sess_runs}
 
     for run in previous.values():
-        run.duration += elapsed
+        run.advance_usage(timestamp, elapsed)
 
     current_runs: list[SessionRun] = []
     started_runs: list[SessionRun] = []
@@ -63,6 +63,7 @@ def _reconcile_login_sessions(
                 sess_ident=session.ident,
                 started=session.started,
                 duration=0,
+                intervals=[],
                 terminate_requested=None,
                 break_duration=0,
             )
@@ -106,6 +107,7 @@ def _reconcile_login_sessions(
                 timestamp=timestamp,
                 run_ident=run.run_ident,
                 duration=run.duration,
+                intervals=None if run.intervals is None else tuple(run.intervals),
                 meta=EndMeta(actor=actor),
             )
         )

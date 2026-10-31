@@ -212,10 +212,13 @@ records without identifying metadata cannot be reconstructed.
 
 On a new system boot, saved session and reported application runs are completed
 with their last saved durations before their active state is cleared. End times
-use the last saved observation; if it is unavailable, start plus recorded duration
-is used as an estimate. Shutdown time is not added to usage. An interrupted
+use the last saved observation, then the last interval end, or start plus duration
+if neither is available. Shutdown time is not added to usage. An interrupted
 recovery is retried without appending duplicate endings. Restarting only the
 service within the same boot preserves active runs.
+
+End events include saved accounting intervals, excluding sleep and observation
+gaps. Runs without interval history report it as unknown.
 
 ### Implementation and cost
 

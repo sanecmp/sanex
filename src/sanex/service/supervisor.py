@@ -82,11 +82,18 @@ class Supervisor:
         self,
         existing: bool = False,
         elapsed: int | None = None,
+        *,
+        timestamp: int | None = None,
     ) -> SupervisorResult:
         """Advance all account cycles from one complete logind snapshot."""
 
         if not isinstance(existing, bool):
             raise AccountingError("existing supervisor flag is invalid")
+
+        if timestamp is not None and (
+            not isinstance(timestamp, int) or isinstance(timestamp, bool) or timestamp < 0
+        ):
+            raise AccountingError("supervisor timestamp is invalid")
 
         if elapsed is None:
             elapsed = self.clock.advance()
@@ -94,7 +101,9 @@ class Supervisor:
         elif not isinstance(elapsed, int) or isinstance(elapsed, bool) or elapsed < 0:
             raise AccountingError("supervisor elapsed time is invalid")
 
-        timestamp = self._timestamp()
+        if timestamp is None:
+            timestamp = self.read_timestamp()
+
         sessions = await self.session_source.read_sessions()
         observations = await self._observe_windows(sessions)
         by_uid: dict[int, list[SessionObservation]] = {
@@ -172,7 +181,8 @@ class Supervisor:
 
         return tuple(observations)
 
-    def _timestamp(self) -> int:
+    def read_timestamp(self) -> int:
+        """Read validated wall-clock seconds for an accounting observation."""
         value = self.wall_clock()
 
         if (

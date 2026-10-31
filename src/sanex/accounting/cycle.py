@@ -154,7 +154,7 @@ class AccountCycle:
 
             if observation is not None and observation.snapshot is None:
                 unavailable_wnds.extend(self.runtime.list_window_idents(sess_ident))
-                self.runtime.advance_unobserved_processes(sess_ident, elapsed)
+                self.runtime.advance_unobserved_processes(sess_ident, elapsed, timestamp=timestamp)
                 continue
 
             snapshot = AtspiWindowSnapshot()

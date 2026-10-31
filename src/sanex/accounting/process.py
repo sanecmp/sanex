@@ -85,7 +85,7 @@ def _reconcile_session_windows(
     previous_run_windows = {id(run): tuple(run.wnds) for run in previous_runs}
 
     for run in previous_runs:
-        run.duration += elapsed
+        run.advance_usage(timestamp, elapsed)
 
     unavailable_buses = frozenset(snapshot.unavailable_buses)
     unavailable_windows = {
@@ -179,6 +179,7 @@ def _reconcile_session_windows(
                 application=group.application,
                 started=timestamp,
                 duration=0,
+                intervals=[],
                 reported=False,
                 wnds=[],
             )
@@ -321,6 +322,7 @@ def _create_process_events(
                     timestamp=timestamp,
                     run_ident=run.run_ident,
                     duration=run.duration,
+                    intervals=None if run.intervals is None else tuple(run.intervals),
                     meta=EndMeta(actor=actor),
                 )
             )

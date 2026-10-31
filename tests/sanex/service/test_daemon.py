@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from sanelib.protocol import Config, EventType, decode_config, iterate_event_records
+from sanelib.protocol import Config, EventType, UsageInterval, decode_config, iterate_event_records
 
 from sanex.accounting.clock import ActiveTimeClock
 from sanex.accounting.runtime import AccountRuntime
@@ -43,11 +43,19 @@ class FakeSupervisor:
         self.calls: list[tuple[bool, int | None]] = []
         self.on_walk: Callable[[], None] | None = None
 
+    def read_timestamp(self) -> int:
+        return 1_790_956_800 + len(self.calls)
+
     async def walk(
         self,
         existing: bool = False,
         elapsed: int | None = None,
+        *,
+        timestamp: int | None = None,
     ) -> FakeWalkResult:
+
+        if timestamp is None:
+            timestamp = self.read_timestamp()
 
         if elapsed is None and self.clock is not None:
             self.clock.advance()
@@ -57,7 +65,7 @@ class FakeSupervisor:
         if self.on_walk is not None:
             self.on_walk()
 
-        return FakeWalkResult(timestamp=1_790_956_800 + len(self.calls) - 1)
+        return FakeWalkResult(timestamp=timestamp)
 
 
 class FakeLogind:
@@ -563,6 +571,74 @@ async def test_service_accounts_active_time_before_sleep(
 
     assert supervisor.calls == [(True, None), (False, 2)]
     assert clock.sleeping
+
+
+@pytest.mark.asyncio
+async def test_sleep_intervals_keep_the_timestamp_captured_before_waiting_for_state(
+    tmp_path: Path, config_payload: dict[str, Any],
+) -> None:
+    timestamp = 1_790_956_800
+    wall_timestamp = timestamp
+    captured = asyncio.Event()
+    readings = iter((0, 0, 2_000_000_000))
+
+    def read_monotonic() -> int:
+        value = next(readings)
+
+        if value == 2_000_000_000:
+            captured.set()
+
+        return value
+
+    factory = service_factory(tmp_path, config_payload, "boot-current")
+    factory.enforcement_enabled = False
+    factory.clock_factory = lambda: ActiveTimeClock(now=read_monotonic)
+    logind = FakeLogind()
+    logind.snapshot = (indicator_session(),)
+    logind.sleep_changes.append(True)
+    factory.logind_factory = lambda: logind
+    factory.window_agents_factory = lambda path: FakeWindowAgents()
+    service = factory.create()
+    service.install_signal_handlers = False
+    service.supervisor.wall_clock = lambda: wall_timestamp
+    indicator = FakeIndicatorServer()
+    service.indicator_server = indicator
+    holders: list[asyncio.Task[None]] = []
+
+    async def delay_accounting() -> None:
+        nonlocal wall_timestamp
+
+        async with service._state_lock:
+            await captured.wait()
+            wall_timestamp += 86_400
+
+    def handle_publication(moment: int) -> None:
+        nonlocal wall_timestamp
+
+        if len(indicator.published) == 1:
+            wall_timestamp += 2
+            holders.append(asyncio.create_task(delay_accounting()))
+
+        else:
+            service.request_stop()
+
+    indicator.on_publish = handle_publication
+    try:
+        await service.run()
+
+    finally:
+
+        for holder in holders:
+            holder.cancel()
+
+        await asyncio.gather(*holders, return_exceptions=True)
+
+    state = service.runtimes[1001].state
+    assert wall_timestamp == timestamp + 86_402
+    assert indicator.published == [timestamp, timestamp + 2]
+    assert state.observed_at == timestamp + 2
+    assert state.sess_runs[0].intervals == [UsageInterval(timestamp=timestamp + 2, duration=2)]
+    assert state.sess_runs[0].duration == 2
 
 
 @pytest.mark.asyncio

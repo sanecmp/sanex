@@ -140,3 +140,13 @@ def test_session_run_break_snapshot_requires_termination(
         "break_duration must be zero without terminate_requested",
         "$.sess_runs[0]",
     )
+
+
+@pytest.mark.parametrize("collection", ["sess_runs", "prc_runs"])
+def test_known_run_intervals_must_cover_its_recorded_duration(
+    runtime_payload: dict[str, Any], collection: str,
+) -> None:
+    run = runtime_payload[collection][0]
+    run["intervals"] = [{"timestamp": run["started"] + run["duration"], "duration": run["duration"] - 1}]
+
+    assert_invalid(runtime_payload, "interval durations must sum to duration", f"$.{collection}[0]")

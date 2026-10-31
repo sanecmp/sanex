@@ -4,7 +4,7 @@ from datetime import date
 from typing import Annotated, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from sanelib.protocol import ApplicationIdentity, ObservationSource
+from sanelib.protocol import ApplicationIdentity, ObservationSource, UsageInterval
 
 from ..exceptions import RuntimeStateError
 from .validation import (
@@ -23,13 +23,46 @@ class _RuntimeModel(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
 
-class SessionRun(_RuntimeModel):
+class _AccountedRun(_RuntimeModel):
+    """Recorded duration and its known uninterrupted accounting intervals."""
+
+    duration: NonNegativeInt
+    intervals: list[UsageInterval] | None = None
+
+    @model_validator(mode="after")
+    def validate_intervals(self) -> Self:
+        """Keep a complete interval history equal to the existing duration counter."""
+
+        if self.intervals is not None and sum(interval.duration for interval in self.intervals) != self.duration:
+            raise ValueError("interval durations must sum to duration")
+
+        return self
+
+    def advance_usage(self, timestamp: int, elapsed: int) -> None:
+        """Locate newly counted seconds without filling gaps in accounting."""
+
+        if not elapsed:
+            return
+
+        if self.intervals is not None:
+            interval = UsageInterval(timestamp=timestamp, duration=elapsed)
+
+            if self.intervals and self.intervals[-1].timestamp == timestamp - elapsed:
+                interval = interval.model_copy(update={"duration": self.intervals[-1].duration + elapsed})
+                self.intervals[-1] = interval
+
+            else:
+                self.intervals.append(interval)
+
+        self.duration += elapsed
+
+
+class SessionRun(_AccountedRun):
     """Active statistical observation and enforcement state of a login session."""
 
     run_ident: NonNegativeInt
     sess_ident: NonEmptyString
     started: NonNegativeInt
-    duration: NonNegativeInt
     terminate_requested: NonNegativeInt | None
     break_duration: NonNegativeInt
 
@@ -43,7 +76,7 @@ class SessionRun(_RuntimeModel):
         return self
 
 
-class ProcessRun(_RuntimeModel):
+class ProcessRun(_AccountedRun):
     """Active statistical observation of an application process group."""
 
     run_ident: NonNegativeInt | None
@@ -55,7 +88,6 @@ class ProcessRun(_RuntimeModel):
     application: ApplicationIdentity | None = None
     application_update_pending: bool = False
     started: NonNegativeInt
-    duration: NonNegativeInt
     reported: bool
     wnds: list[NonNegativeInt]
 

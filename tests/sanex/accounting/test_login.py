@@ -1,13 +1,15 @@
 """Tests for graphical login-session reconciliation and events."""
 
+from pathlib import Path
 from typing import Any
 
 import pytest
-from sanelib.protocol import Actor, EventType, SessionEndEvent, SessionStartEvent
+from sanelib.protocol import Actor, EventType, SessionEndEvent, SessionStartEvent, UsageInterval
 
 from sanex.accounting.runtime import AccountRuntime
 from sanex.model.session import LoginSession, SessionState, SessionType
 from sanex.model.state import decode_runtime_state
+from sanex.storage.state import RuntimeStateStore
 
 
 def observed_session(runtime_payload: dict[str, Any], ident: str = "3") -> LoginSession:
@@ -119,3 +121,46 @@ def test_enforced_end_finishes_usage_and_starts_break(
     assert event.meta.actor is Actor.SANEX
     assert not usage.active
     assert state.break_till == 1_790_852_800
+
+
+def test_session_intervals_exclude_time_before_discovery_sleep_and_service_restart(
+    runtime_payload: dict[str, Any], tmp_path: Path,
+) -> None:
+    state = decode_runtime_state(runtime_payload)
+    state.sess_runs = []
+    runtime = AccountRuntime(1001, state)
+    session = observed_session(runtime_payload)
+    timestamp = session.started + 86_400
+
+    started = runtime.reconcile_sessions((session,), timestamp, 0, existing=True)
+    runtime.reconcile_sessions((session,), timestamp + 5, 5)
+    runtime.reconcile_sessions((session,), timestamp + 10, 5)
+    runtime.reconcile_sessions((session,), timestamp + 3_610, 0)
+    runtime.reconcile_sessions((session,), timestamp + 3_615, 5)
+    store = RuntimeStateStore(tmp_path)
+    store.save(runtime.uid, state)
+    restored = store.load(runtime.uid)
+    assert restored is not None
+    runtime = AccountRuntime(runtime.uid, restored)
+    runtime.reconcile_sessions((session,), timestamp + 7_215, 0, existing=True)
+    ended = runtime.reconcile_sessions((), timestamp + 7_220, 5)
+
+    event = ended.events[0]
+    assert started.events[0].timestamp == session.started
+    assert event.duration == 20
+    assert event.intervals == (
+        UsageInterval(timestamp=timestamp + 10, duration=10),
+        UsageInterval(timestamp=timestamp + 3_615, duration=5),
+        UsageInterval(timestamp=timestamp + 7_220, duration=5),
+    )
+    assert sum(interval.duration for interval in event.intervals) == event.duration
+
+
+def test_session_without_an_interval_history_keeps_it_unknown(runtime_payload: dict[str, Any]) -> None:
+    state = decode_runtime_state(runtime_payload)
+    runtime = AccountRuntime(1001, state)
+
+    ended = runtime.reconcile_sessions((), 1_790_845_600, 5)
+
+    assert ended.events[0].duration == 3_022
+    assert ended.events[0].intervals is None

@@ -8,6 +8,7 @@ import pytest
 from sanex.accounting.clock import ActiveTimeClock
 from sanex.accounting.cycle import AccountCycleResult, AppPolicyDecision, SessionObservation
 from sanex.accounting.runtime import AccountRuntime
+from sanex.exceptions import AccountingError
 from sanex.model.session import LoginSession, SessionState, SessionType
 from sanex.model.state import decode_runtime_state
 from sanex.model.window import AtspiWindow, AtspiWindowSnapshot, WindowRole
@@ -253,11 +254,31 @@ async def test_walk_accepts_elapsed_time_captured_at_sleep_transition(
         window_source=FakeWindowSource(),
         cycles={1001: cycle},
         clock=clock,
+        wall_clock=lambda: WALL_TIMESTAMP + 86_400,
+    )
+
+    result = await supervisor.walk(elapsed=4, timestamp=WALL_TIMESTAMP)
+
+    assert result.elapsed == 4
+    assert result.timestamp == WALL_TIMESTAMP
+    assert cycle.calls[0][1] == WALL_TIMESTAMP
+    assert cycle.calls[0][2] == 4
+    assert readings == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("timestamp", [-1, True, 1.5])
+async def test_walk_rejects_an_invalid_captured_timestamp(timestamp: object) -> None:
+    sessions = FakeSessionSource(())
+    supervisor = Supervisor(
+        session_source=sessions,
+        window_source=FakeWindowSource(),
+        cycles={},
+        clock=ActiveTimeClock(now=lambda: 0),
         wall_clock=lambda: WALL_TIMESTAMP,
     )
 
-    result = await supervisor.walk(elapsed=4)
+    with pytest.raises(AccountingError, match="supervisor timestamp is invalid"):
+        await supervisor.walk(elapsed=4, timestamp=timestamp)
 
-    assert result.elapsed == 4
-    assert cycle.calls[0][2] == 4
-    assert readings == 1
+    assert sessions.calls == 0

@@ -97,6 +97,9 @@ class RuntimeRepository:
 
             timestamp = max(state.observed_at or 0, run.started + run.duration)
 
+            if state.observed_at is None and run.intervals:
+                timestamp = run.intervals[-1].timestamp
+
             if isinstance(run, ProcessRun) and run.application_update_pending:
                 state.event_seq += 1
                 self.event_store.append(uid, ProcessUpdateEvent(
@@ -116,6 +119,7 @@ class RuntimeRepository:
                 timestamp=timestamp,
                 run_ident=run.run_ident,
                 duration=run.duration,
+                intervals=None if run.intervals is None else tuple(run.intervals),
                 meta=EndMeta(actor=Actor.UNKNOWN),
             ))
 

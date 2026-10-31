@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 from sanelib.protocol import (
     Actor, ApplicationIdentity, EventType, ObservationSource, ProcessEndEvent, ProcessStartEvent, ProcessUpdateEvent,
+    UsageInterval,
 )
 
 from sanex.accounting.runtime import AccountRuntime
@@ -182,6 +183,33 @@ def test_missing_windows_end_run_after_charging_final_interval(
     assert existing_run.duration == 3142
     assert state.wnds == []
     assert state.prc_runs == []
+
+
+def test_application_intervals_exclude_sleep_and_include_existing_unobserved_accounting(
+    runtime_payload: dict[str, Any],
+) -> None:
+    state = decode_runtime_state(runtime_payload)
+    group = existing_group(runtime_payload)
+    state.prc_runs = []
+    state.wnds = []
+    runtime = AccountRuntime(1001, state)
+    timestamp = 1_790_845_600
+
+    runtime.reconcile_windows("3", (group,), AtspiWindowSnapshot(), timestamp, 0)
+    runtime.create_process_events((), 0, timestamp)
+    runtime.reconcile_windows("3", (group,), AtspiWindowSnapshot(), timestamp + 600, 600)
+    runtime.reconcile_windows("3", (group,), AtspiWindowSnapshot(), timestamp + 3_600, 0)
+    runtime.advance_unobserved_processes("3", 300, timestamp=timestamp + 3_900)
+    ended = runtime.reconcile_windows("3", (), AtspiWindowSnapshot(), timestamp + 4_200, 300)
+    events = runtime.create_process_events(ended.ended, 0, timestamp + 4_200)
+
+    assert len(events) == 1
+    assert events[0].type is EventType.PRC_END
+    assert events[0].duration == 1_200
+    assert events[0].intervals == (
+        UsageInterval(timestamp=timestamp + 600, duration=600),
+        UsageInterval(timestamp=timestamp + 4_200, duration=600),
+    )
 
 
 @pytest.mark.parametrize("scope", ["application", "window"])
@@ -415,6 +443,7 @@ def test_windowless_game_improves_its_name_without_restarting_or_losing_the_upda
     assert len(events) == 1
     assert events[0].type == EventType.PRC_END
     assert events[0].duration == 15
+    assert events[0].intervals == (UsageInterval(timestamp=timestamp + 15, duration=15),)
     assert events[0].run_ident == changed[0].run_ident
     assert restored.prc_runs == []
     starts = [event for event in (*start, *changed, *events) if isinstance(event, ProcessStartEvent)]

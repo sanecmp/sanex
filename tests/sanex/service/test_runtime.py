@@ -5,7 +5,9 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
-from sanelib.protocol import Actor, ApplicationIdentity, Event, EventType, decode_config, iterate_event_records
+from sanelib.protocol import (
+    Actor, ApplicationIdentity, Event, EventType, UsageInterval, decode_config, iterate_event_records,
+)
 
 from sanex.model.state import decode_runtime_state
 from sanex.service.runtime import RuntimeRepository
@@ -236,4 +238,37 @@ def test_boot_recovery_retries_an_interrupted_append_without_losing_runs(
         (EventType.SESSION_END, 120), (EventType.PRC_END, 121),
     ]
     assert restored.event_seq == 143
+    assert restored.sess_runs == restored.prc_runs == []
+
+
+@pytest.mark.parametrize("observed_at", [None, 1_790_850_000])
+def test_new_boot_preserves_recorded_intervals_in_recovered_endings(
+    tmp_path: Path, config_payload: dict[str, Any], runtime_payload: dict[str, Any],
+    observed_at: int | None,
+) -> None:
+    config = decode_config(config_payload)
+    state = decode_runtime_state(runtime_payload)
+    state.observed_at = observed_at
+    timestamp = 1_790_850_000
+
+    for run in (*state.sess_runs, *state.prc_runs):
+        run.intervals = [
+            UsageInterval(timestamp=timestamp + 86_400, duration=run.duration - 17),
+            UsageInterval(timestamp=timestamp, duration=17),
+        ]
+
+    runtimes = RuntimeRepository(RuntimeStateStore(tmp_path), EventStore(tmp_path), "synthetic-next-boot")
+    runtimes.state_store.save(1001, state)
+
+    restored = runtimes.load(config.accounts[0], config.ident)
+    endings = tuple(
+        event
+        for packet in runtimes.event_store.pending(1001)
+        for event in iterate_event_records(packet.path.read_bytes())
+    )
+
+    assert [event.intervals for event in endings] == [
+        tuple(state.sess_runs[0].intervals), tuple(state.prc_runs[0].intervals),
+    ]
+    assert all(event.timestamp == timestamp for event in endings)
     assert restored.sess_runs == restored.prc_runs == []

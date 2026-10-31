@@ -126,15 +126,18 @@ class AccountRuntime:
         self,
         sess_ident: str,
         elapsed: int,
+        *,
+        timestamp: int,
     ) -> None:
         """Advance known runs while preserving an unavailable window snapshot."""
         require_nonnegative(elapsed, "unobserved process elapsed time")
+        require_nonnegative(timestamp, "unobserved process timestamp")
         window_idents = {window.ident for window in self.state.wnds if window.sess_ident == sess_ident}
 
         for run in self.state.prc_runs:
 
             if run.sess_ident == sess_ident or any(wnd_ident in window_idents for wnd_ident in run.wnds):
-                run.duration += elapsed
+                run.advance_usage(timestamp, elapsed)
 
     def list_window_idents(self, sess_ident: str) -> tuple[int, ...]:
         """Return stable identities of current windows in one login session."""
