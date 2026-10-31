@@ -139,6 +139,26 @@ curl -fsSL https://raw.githubusercontent.com/sanecmp/sanex/main/install.sh \
 You can also update sanex through sanea's web interface. In **Computers**, enter
 the version you want in **Update sanex** and start the update.
 
+## Uninstalling sanex
+
+Back up any local data you want to keep, then run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sanecmp/sanex/main/uninstall.sh \
+    | sudo sh
+```
+
+From a checkout, run `sudo ./uninstall.sh` instead. The script takes no arguments
+and asks you to type `sanex` in the terminal before making any changes. Any other
+answer, or no terminal, cancels removal.
+
+Removal stops and disables `sanex.path` and `sanex.service`, stops the installed
+indicators without ending user sessions, and deletes the application, local
+registration, private keys, counters, events and technical logs. It also removes
+the systemd units, indicator autostart, icons and logrotate rule. No requests are
+sent to sanea and none of its data is changed. Python and uv are not required
+for removal and are not changed.
+
 ## Application identification
 
 Application names and IDs are recorded separately from raw process names,
